@@ -4,3 +4,4 @@ supabase
 pydantic
 python-dotenv
 requests
+reportlab
