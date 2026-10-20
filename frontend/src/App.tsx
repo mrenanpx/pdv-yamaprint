@@ -28,7 +28,7 @@ const LINKS_DRIVE: Record<string, string> = {
   "SUZANO": "https://drive.google.com/drive/folders/1YAwCBmHhPcVmprpFzSdE9C1f0C7bmZCe?usp=drive_link"
 };
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = "https://pdv-yamaprint.onrender.com";
 
 export default function App() {
   const [logado, setLogado] = useState(false);
