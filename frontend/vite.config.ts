@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icon/logo.svg'],
+      includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'Yama Print PDV',
         short_name: 'YamaPDV',
@@ -16,9 +16,14 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: '/icon/logo.svg',
+            src: '/icon-192.png',
             sizes: '192x192',
-            type: 'image/svg+xml'
+            type: 'image/png'
+          },
+          {
+            src: '/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png'
           }
         ]
       }
