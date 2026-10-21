@@ -40,14 +40,16 @@
   },
 
 "bundle": {
-    "windows": {
-      "nsis": {
-        "installerIcon": "icons/icon.ico",
-        "headerImage": "icons/header.bmp",
-        "sidebarImage": "icons/sidebar.bmp"
-      }
+  "windows": {
+    "nsis": {
+      "installerIcon": "icons/icon.ico",
+      "headerImage": "icons/header.bmp",
+      "sidebarImage": "icons/sidebar.bmp"
     }
-
+  },
+  "externalBin": [
+    "binaries/main"
+  ]
 }
 
 

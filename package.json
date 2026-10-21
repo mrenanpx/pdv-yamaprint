@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9"
+  },
+  "devDependencies": {
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}

@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from './supabaseClient';
+import { gerarPDFNavegador } from './gerar_pdfs_profissionais';
 
 const SETORES = [
   { id: 'MATERIAIS', label: 'MATERIAL', icon: Scissors, shortcut: 'F1' },
@@ -28,7 +30,10 @@ const LINKS_DRIVE: Record<string, string> = {
   "SUZANO": "https://drive.google.com/drive/folders/1YAwCBmHhPcVmprpFzSdE9C1f0C7bmZCe?usp=drive_link"
 };
 
-const API_URL = "https://pdv-yamaprint.onrender.com";
+const USUARIOS_CONFIG: Record<string, { unidade: string; email: string }> = {
+  "loja-MOGI": { unidade: "MOGI", email: "mogi@yamaprint.local" },
+  "loja-SUZANO": { unidade: "SUZANO", email: "suzano@yamaprint.local" }
+};
 
 export default function App() {
   const [logado, setLogado] = useState(false);
@@ -37,7 +42,7 @@ export default function App() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [unidade, setUnidade] = useState('MOGI');
 
-  const [statusCaixa, setStatusCaixa] = useState<any>({ status: 'Fechado' });
+  const [statusCaixa, setStatusCaixa] = useState<Record<string, any>>({ status: 'Fechado' });
   const [setorAtivo, setSetorAtivo] = useState<string | null>(null);
   
   const [precoInput, setPrecoInput] = useState<string>('0');
@@ -51,31 +56,23 @@ export default function App() {
   const [mensagemTrocaResultado, setMensagemTrocaResultado] = useState<string>('');
   const [erroLoginMsg, setErroLoginMsg] = useState<string | null>(null);
 
-  // Estado para alternar Sidebar entre expandido e encolhido
   const [sidebarExpandida, setSidebarExpandida] = useState(true);
-
-  // Sistema de Toast flutuante
   const [toast, setToast] = useState<{ mensagem: string; tipo: 'sucesso' | 'erro' | 'aviso' | 'retirada' | 'neutro' } | null>(null);
 
   const dispararToast = (mensagem: string, tipo: 'sucesso' | 'erro' | 'aviso' | 'retirada' | 'neutro' = 'sucesso') => {
     setToast({ mensagem, tipo });
-    setTimeout(() => {
-      setToast(null);
-    }, 3000);
+    setTimeout(() => { setToast(null); }, 3000);
   };
 
-  // Estados para Retirada / Mensalista
   const [pendenteRetirada, setPendenteRetirada] = useState<{ valor: number; qtd: number } | null>(null);
   const [obsRetiradaInput, setObsRetiradaInput] = useState<string>('');
 
-  // Listagem e Busca
   const [dadosVendasModal, setDadosVendasModal] = useState<any[]>([]);
   const [termoBusca, setTermoBusca] = useState<string>('');
   const [filtroSetor, setFiltroSetor] = useState<string>('TODOS');
   const [valorMin, setValorMin] = useState<string>('');
   const [valorMax, setValorMax] = useState<string>('');
 
-  // Modal de Exclusão
   const [vendaParaCancelar, setVendaParaCancelar] = useState<any>(null);
   const [motivoCancelamento, setMotivoCancelamento] = useState<string>('');
   const [sucessoExclusaoMsg, setSucessoExclusaoMsg] = useState<string | null>(null);
@@ -85,7 +82,6 @@ export default function App() {
   const inputObsRetiradaRef = useRef<HTMLInputElement>(null);
   const totalCarrinho = carrinho.reduce((acc, item) => acc + item.valor * item.qtd, 0);
 
-  // Atalhos de Teclado Globais (Ctrl+L e Ctrl+F)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -165,27 +161,31 @@ export default function App() {
   const fazerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErroLoginMsg(null);
+    const config = USUARIOS_CONFIG[usuario];
+    if (!config) {
+      setErroLoginMsg('Usuário inválido.');
+      return;
+    }
+
     try {
-      const res = await fetch(`${API_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario, senha })
+      const { error } = await supabase.auth.signInWithPassword({
+        email: config.email,
+        password: senha
       });
-      const data = await res.json();
-      if (data.success) {
-        setUnidade(data.unidade);
-        setLogado(true);
-        carregarStatus(data.unidade);
-        dispararToast(`Bem-vindo à unidade ${data.unidade}!`, 'sucesso');
-      } else {
-        setErroLoginMsg(data.detail || 'Usuário ou senha inválidos.');
-      }
-    } catch (err) {
-      setErroLoginMsg('Erro de conexão com o servidor Python.');
+
+      if (error) throw error;
+
+      setUnidade(config.unidade);
+      setLogado(true);
+      carregarStatus(config.unidade);
+      dispararToast(`Bem-vindo à unidade ${config.unidade}!`, 'sucesso');
+    } catch (err: any) {
+      setErroLoginMsg(err.message || 'Usuário ou senha inválidos.');
     }
   };
 
   const fazerLogout = () => {
+    supabase.auth.signOut();
     setLogado(false);
     setSenha('');
     setCarrinho([]);
@@ -195,9 +195,108 @@ export default function App() {
 
   const carregarStatus = async (uni = unidade) => {
     try {
-      const res = await fetch(`${API_URL}/api/status-caixa/${uni}`);
-      const data = await res.json();
-      setStatusCaixa(data);
+      const { data: sessoes } = await supabase
+        .from("caixa_sessoes")
+        .select("*")
+        .eq("unidade", uni)
+        .eq("status", "ABERTO")
+        .order("aberto_em", { ascending: false })
+        .limit(1);
+
+      const sessao = sessoes && sessoes.length > 0 ? sessoes[0] : null;
+
+      if (!sessao) {
+        setStatusCaixa({
+          status: "Fechado",
+          dataHora: "CAIXA FECHADO",
+          trocoInicial: "0.00",
+          caixa2Ativo: false,
+          vendas: [],
+          totais: { totalVendas: 0.0, saldoCaixa: 0.0, totalClientesUnicos: 0, ticketMedio: 0.0, porSetor: {}, porPagamento: { DINHEIRO: 0, PIX: 0, DÉBITO: 0, CRÉDITO: 0 } }
+        });
+        return;
+      }
+
+      const { data: vendasRaw } = await supabase
+        .from("vendas")
+        .select("*")
+        .eq("sessao_id", sessao.id)
+        .order("numero_sequencial", { ascending: true });
+
+      let total_vendas = 0.0;
+      let dinheiro_liquido = 0.0;
+      let repasse_caixa_2 = 0.0;
+      const SETORES_ORDEM = [
+        "MATERIAIS", "CÓPIA", "IMPR. P/B", "IMPR. COLOR",
+        "PLASTIFICAÇÃO", "ENCADERNAÇÃO", "CARIMBO", "GRÁFICA",
+        "INFORMÁTICA", "PACOTE", "MENSALISTA", "RETIRADA"
+      ];
+      const por_setor: Record<string, number> = {};
+      SETORES_ORDEM.forEach(s => por_setor[s] = 0.0);
+
+      const por_pagto: Record<string, number> = { "DINHEIRO": 0.0, "PIX": 0.0, "DÉBITO": 0.0, "CRÉDITO": 0.0 };
+      const vendas_formatadas: any[] = [];
+      const ids_unicos_validos = new Set();
+
+      if (vendasRaw) {
+        vendasRaw.forEach((v: any) => {
+          const valor = parseFloat(v.valor);
+          const pagto = v.forma_pagto;
+          const setor = v.setor;
+
+          if (pagto !== "CANCELADO") {
+            ids_unicos_validos.add(v.numero_sequencial);
+            if (setor === "RETIRADA") {
+              por_setor["RETIRADA"] = (por_setor["RETIRADA"] || 0) + valor;
+              if (pagto === "DINHEIRO") dinheiro_liquido -= valor;
+            } else {
+              total_vendas += valor;
+              if (por_setor[setor] !== undefined) por_setor[setor] += valor;
+              if (por_pagto[pagto] !== undefined) por_pagto[pagto] += valor;
+              if (pagto === "DINHEIRO") {
+                dinheiro_liquido += valor;
+                if (v.is_caixa_2) repasse_caixa_2 += valor;
+              }
+            }
+          }
+
+          const dataCriacao = new Date(v.criado_em);
+          vendas_formatadas.push({
+            uuid: v.id,
+            id: String(v.numero_sequencial).padStart(4, '0'),
+            setor: setor,
+            hora: dataCriacao.toLocaleTimeString(),
+            valor: valor,
+            valorFormatado: `R$ ${valor.toFixed(2).replace('.', ',')}`,
+            pagamento: pagto,
+            obs: v.observacao || "",
+            isCaixa2: v.is_caixa_2
+          });
+        });
+      }
+
+      vendas_formatadas.reverse();
+      const total_clientes = ids_unicos_validos.size;
+      const ticket_medio = total_clientes > 0 ? total_vendas / total_clientes : 0;
+      const dtAbertura = new Date(sessao.aberto_em).toLocaleString();
+
+      setStatusCaixa({
+        status: "Aberto",
+        sessaoId: sessao.id,
+        dataHora: dtAbertura,
+        trocoInicial: parseFloat(sessao.troco_inicial).toFixed(2),
+        caixa2Ativo: sessao.caixa_2_ativo,
+        vendas: vendas_formatadas,
+        totais: {
+          totalVendas: parseFloat(total_vendas.toFixed(2)),
+          saldoCaixa: parseFloat((parseFloat(sessao.troco_inicial) + dinheiro_liquido).toFixed(2)),
+          repasseCaixa2: parseFloat(repasse_caixa_2.toFixed(2)),
+          totalClientesUnicos: total_clientes,
+          ticketMedio: parseFloat(ticket_medio.toFixed(2)),
+          porSetor: por_setor,
+          porPagamento: por_pagto
+        }
+      });
     } catch (err) {
       console.error(err);
     }
@@ -226,13 +325,13 @@ export default function App() {
     setCarregando(true);
     try {
       const valorTroco = parseFloat(trocoInput.replace(',', '.')) || 0;
-      const res = await fetch(`${API_URL}/api/abrir-caixa`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unidade, troco_inicial: valorTroco })
-      });
-      const data = await res.json();
-      setStatusCaixa(data);
+      const { error } = await supabase
+        .from("caixa_sessoes")
+        .insert([{ unidade, status: "ABERTO", troco_inicial: valorTroco, caixa_2_ativo: false }]);
+
+      if (error) throw error;
+
+      await carregarStatus(unidade);
       setModalAberto(null);
       dispararToast('Caixa aberto com sucesso!', 'sucesso');
     } catch (err) {
@@ -245,17 +344,28 @@ export default function App() {
   const handleFecharCaixa = async () => {
     setCarregando(true);
     try {
-      const res = await fetch(`${API_URL}/api/fechar-caixa/${unidade}`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        setMensagemSucesso(data.mensagem);
-        setModalAberto('sucesso_fechamento');
-        carregarStatus();
-        dispararToast('Caixa fechado e relatórios gerados!', 'sucesso');
-      } else {
-        alert(data.detail);
+      if (!statusCaixa.sessaoId) return;
+
+      if (statusCaixa.caixa2Ativo) {
+        alert("Finalize o Caixa Almoço antes de fechar o dia.");
         setModalAberto(null);
+        setCarregando(false);
+        return;
       }
+
+      const { error } = await supabase
+        .from("caixa_sessoes")
+        .update({ status: "FECHADO", fechado_em: new Date().toISOString() })
+        .eq("id", statusCaixa.sessaoId);
+
+      if (error) throw error;
+
+      gerarPDFNavegador(unidade, { troco_inicial: statusCaixa.trocoInicial }, statusCaixa);
+
+      setMensagemSucesso("Caixa fechado com sucesso!\nO relatório PDF foi gerado diretamente no seu computador.");
+      setModalAberto('sucesso_fechamento');
+      await carregarStatus();
+      dispararToast('Caixa fechado e PDF gerado!', 'sucesso');
     } catch (err) {
       alert('Erro ao fechar caixa.');
       setModalAberto(null);
@@ -267,15 +377,29 @@ export default function App() {
   const handleTrocaCaixa = async (acao: 'iniciar' | 'finalizar') => {
     setCarregando(true);
     try {
-      const res = await fetch(`${API_URL}/api/troca-caixa`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unidade, acao })
-      });
-      const data = await res.json();
-      setMensagemTrocaResultado(data.mensagem);
+      if (!statusCaixa.sessaoId) return;
+
+      if (acao === 'iniciar') {
+        const { error } = await supabase
+          .from("caixa_sessoes")
+          .update({ caixa_2_ativo: true })
+          .eq("id", statusCaixa.sessaoId);
+
+        if (error) throw error;
+        setMensagemTrocaResultado("2º CAIXA iniciado com sucesso!\n\nAs próximas vendas serão registradas no 2º CAIXA com troco fixo base de R$ 375,00.");
+      } else {
+        const repasse = statusCaixa.totais?.repasseCaixa2 || 0;
+        const { error } = await supabase
+          .from("caixa_sessoes")
+          .update({ caixa_2_ativo: false, repasse_caixa_2: repasse })
+          .eq("id", statusCaixa.sessaoId);
+
+        if (error) throw error;
+        setMensagemTrocaResultado(`TROCA FINALIZADA!\n\nVALOR PARA REPASSE AO CAIXA PRINCIPAL: R$ ${repasse.toFixed(2).replace('.', ',')}`);
+      }
+
       setModalAberto('sucesso_troca');
-      carregarStatus();
+      await carregarStatus();
     } catch (err) {
       alert('Erro na troca de caixa.');
       setModalAberto(null);
@@ -360,49 +484,39 @@ export default function App() {
     }
 
     const itensParaEnviar = [...carrinho];
-    const valorTotalVenda = totalCarrinho;
-    const valorFmt = `R$ ${valorTotalVenda.toFixed(2).replace('.', ',')}`;
-
-    const temRetirada = itensParaEnviar.some(i => i.setor === 'RETIRADA');
-
     setCarrinho([]);
     setSetorAtivo(null);
 
-    if (temRetirada) {
-      dispararToast(`RETIRADA REGISTRADA • ${valorFmt} (${formaPagto})`, 'retirada');
-    } else {
-      dispararToast(`VENDA REGISTRADA • ${valorFmt} (${formaPagto})`, 'sucesso');
-    }
-
-    const novaVendaFake = {
-      uuid: Math.random().toString(),
-      id: "...",
-      setor: itensParaEnviar[0]?.setor || "VENDA",
-      hora: new Date().toLocaleTimeString(),
-      valor: valorTotalVenda,
-      valorFormatado: valorFmt,
-      pagamento: formaPagto,
-      obs: ""
-    };
-
-    setStatusCaixa((prev: any) => ({
-      ...prev,
-      vendas: [novaVendaFake, ...(prev.vendas || [])],
-      totais: {
-        ...prev.totais,
-        totalVendas: (prev.totais?.totalVendas || 0) + valorTotalVenda
-      }
-    }));
-
     try {
-      await fetch(`${API_URL}/api/registrar-venda`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unidade, forma_pagto: formaPagto, itens: itensParaEnviar })
-      });
-      carregarStatus();
+      const { data: ultimas } = await supabase
+        .from("vendas")
+        .select("numero_sequencial")
+        .eq("sessao_id", statusCaixa.sessaoId)
+        .order("numero_sequencial", { ascending: false })
+        .limit(1);
+
+      const proximoSeq = ultimas && ultimas.length > 0 ? ultimas[0].numero_sequencial + 1 : 1;
+      const isC2 = statusCaixa.caixa2Ativo;
+
+      const linhasInserir = itensParaEnviar.map(item => ({
+        sessao_id: statusCaixa.sessaoId,
+        unidade: unidade,
+        numero_sequencial: proximoSeq,
+        setor: item.setor,
+        valor: item.valor,
+        quantidade: item.qtd,
+        forma_pagto: formaPagto,
+        observacao: isC2 ? `[2º CAIXA] ${item.obs || ''}`.trim() : (item.obs || ''),
+        is_caixa_2: isC2
+      }));
+
+      const { error } = await supabase.from("vendas").insert(linhasInserir);
+      if (error) throw error;
+
+      dispararToast('Venda registrada com sucesso!', 'sucesso');
+      await carregarStatus();
     } catch (err) {
-      console.error("Erro ao sincronizar venda:", err);
+      alert('Erro ao registrar venda.');
     }
   };
 
@@ -413,21 +527,19 @@ export default function App() {
     }
     setCarregando(true);
     try {
-      const res = await fetch(`${API_URL}/api/cancelar-venda`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venda_id: vendaParaCancelar.uuid, motivo: motivoCancelamento })
-      });
-      if (res.ok) {
-        setVendaParaCancelar(null);
-        setMotivoCancelamento('');
-        setSucessoExclusaoMsg('Venda excluída com sucesso.');
-        dispararToast('VENDA EXCLUÍDA / CANCELADA', 'retirada');
-        carregarStatus();
-        const statusRes = await fetch(`${API_URL}/api/status-caixa/${unidade}`);
-        const statusData = await statusRes.json();
-        setDadosVendasModal(statusData.vendas || []);
-      }
+      const { error } = await supabase
+        .from("vendas")
+        .update({ forma_pagto: "CANCELADO", observacao: motivoCancelamento.trim() })
+        .eq("id", vendaParaCancelar.uuid);
+
+      if (error) throw error;
+
+      setVendaParaCancelar(null);
+      setMotivoCancelamento('');
+      setSucessoExclusaoMsg('Venda excluída com sucesso.');
+      dispararToast('VENDA EXCLUÍDA / CANCELADA', 'retirada');
+      await carregarStatus();
+      setDadosVendasModal(statusCaixa.vendas || []);
     } catch (err) {
       alert('Erro ao excluir venda.');
     } finally {
@@ -533,7 +645,6 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-100 text-slate-800 select-none overflow-hidden font-sans">
       
-      {/* SIDEBAR COM SCROLL OCULTO */}
       <motion.aside 
         animate={{ width: sidebarExpandida ? 250 : 80 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
@@ -701,7 +812,6 @@ export default function App() {
         </div>
       </motion.aside>
 
-      {/* ÁREA PRINCIPAL À DIREITA */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         
         <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shadow-xs z-10 h-18">
@@ -899,7 +1009,6 @@ export default function App() {
           </div>
         </main>
 
-        {/* MODAIS */}
         <AnimatePresence>
           {modalAberto && (
             <motion.div 
@@ -961,7 +1070,7 @@ export default function App() {
                   <h3 className="text-xl font-black text-slate-800 mb-1">Fechar Caixa</h3>
                   <p className="text-xs font-semibold text-slate-500 mb-6">Deseja fechar o caixa e gerar os relatórios?</p>
                   {carregando ? (
-                    <div className="flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Gerando PDFs e enviando...</div>
+                    <div className="flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Gerando PDF...</div>
                   ) : (
                     <div className="flex gap-3">
                       <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer">Não</button>
@@ -1126,7 +1235,7 @@ export default function App() {
                       </div>
                       <div>
                         <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block">Ticket Médio</span>
-                        <span className="text-sm font-black text-slate-900">R$ {(statusCaixa.totais?.totalClientesUnicos > 0 ? (statusCaixa.totais?.totalVendas / statusCaixa.totais.totalClientesUnicos) : 0).toFixed(2).replace('.', ',')}</span>
+                        <span className="text-sm font-black text-slate-900">R$ {((statusCaixa.totais?.totalClientesUnicos ?? 0) > 0 ? ((statusCaixa.totais?.totalVendas ?? 0) / (statusCaixa.totais?.totalClientesUnicos ?? 1)) : 0).toFixed(2).replace('.', ',')}</span>
                       </div>
                     </div>
                     <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl flex items-center gap-3">
