@@ -26,3 +26,6 @@ backend/credentials.json
 backend/token.pickle
 backend/.env
 repomix-output*.xml
+node_modules
+dist
+.env
