@@ -9,11 +9,15 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Yama Print PDV',
-        short_name: 'YamaPDV',
-        theme_color: '#0f172a',
-        background_color: '#f8fafc',
+        name: 'PDV - Yama Print',
+        short_name: 'YAMA PRINT',
+        description: 'Sistema Corporativo de Caixa',
+        theme_color: '#0d6efd',
+        background_color: '#ffffff',
         display: 'standalone',
+        orientation: 'any',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: '/icon-192.png',
