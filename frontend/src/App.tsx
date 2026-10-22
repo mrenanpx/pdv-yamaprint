@@ -1203,8 +1203,37 @@ export default function App() {
           )}
         </div>
 
+        
+
         <div className="flex-1 py-3 px-3 space-y-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           
+                    <div className="relative group/tip">
+            {!caixaAberto ? (
+              <button 
+                onClick={() => setModalAberto('abrir')} 
+                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 font-bold text-xs transition-all cursor-pointer group/btn"
+              >
+                <Key className="w-5 h-5 shrink-0 group-hover/btn:scale-140 transition-transform" />
+                {sidebarExpandida && <span className="truncate">Abrir Caixa</span>}
+              </button>
+            ) : (
+              <button 
+                onClick={() => setModalAberto('fechar')} 
+                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-bold text-xs transition-all cursor-pointer group/btn"
+              >
+                <Lock className="w-5 h-5 shrink-0 group-hover/btn:scale-140 transition-transform" />
+                {sidebarExpandida && <span className="truncate">Fechar Caixa</span>}
+              </button>
+            )}
+            {!sidebarExpandida && (
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
+                {!caixaAberto ? "Abrir Caixa" : "Fechar Caixa"}
+              </div>
+            )}
+          </div>
+
+          <div className="my-2 border-t border-slate-200" />
+
           <div className="relative group/tip">
             <button 
               onClick={() => { 
@@ -1221,8 +1250,11 @@ export default function App() {
               }} 
               className="w-full flex items-center justify-between px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
+              
+              
+              
               <div className="flex items-center gap-3.5 truncate">
-                <List className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+                <List className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
                 {sidebarExpandida && <span className="truncate">Listar Vendas</span>}
               </div>
               {sidebarExpandida && totalVendasBadge > 0 && (
@@ -1238,6 +1270,8 @@ export default function App() {
             )}
           </div>
 
+          
+
           <div className="relative group/tip">
             <button 
               onClick={() => { 
@@ -1248,13 +1282,13 @@ export default function App() {
                 setDadosVendasModal(statusCaixa.vendas || []); 
                 setModalAberto('fluxo_caixa'); 
               }} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-teal-50 text-slate-600 hover:text-teal-700 font-bold text-xs transition-all cursor-pointer group/btn"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <PieChart className="w-5 h-5 text-teal-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              <PieChart className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
               {sidebarExpandida && <span className="truncate">Fluxo de Caixa</span>}
             </button>
             {!sidebarExpandida && (
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-sky-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
                 Fluxo de Caixa
               </div>
             )}
@@ -1266,11 +1300,11 @@ export default function App() {
               onClick={() => setModalAberto('calculadora')} 
               className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <Calculator className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              <Calculator className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
               {sidebarExpandida && <span className="truncate">Calculadora</span>}
             </button>
             {!sidebarExpandida && (
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-sky-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
                 Calculadora
               </div>
             )}
@@ -1286,26 +1320,26 @@ export default function App() {
                 setItensOrcamento([{ descricao: '', qtd: 1, valorUnit: 0 }]);
                 setModalAberto('orcamento');
               }} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-blue-50 text-slate-600 hover:text-blue-700 font-bold text-xs transition-all cursor-pointer group/btn"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <FileSpreadsheet className="w-5 h-5 text-blue-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              <FileSpreadsheet className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
               {sidebarExpandida && <span className="truncate">Orçamento</span>}
             </button>
             {!sidebarExpandida && (
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-sky-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
                 Orçamento
               </div>
             )}
           </div>
 
-          <div className="my-2 border-t border-slate-100" />
+          <div className="my-2 border-t border-slate-200" />
 
           <div className="relative group/tip">
             <button 
               onClick={() => setModalAberto('troca')} 
               className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <UserCheck className="w-5 h-5 text-purple-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              <UserCheck className="w-5 h-5 text-purple-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
               {sidebarExpandida && <span className="truncate">Troca de Caixa</span>}
             </button>
             {!sidebarExpandida && (
@@ -1318,9 +1352,9 @@ export default function App() {
           <div className="relative group/tip">
             <button 
               onClick={() => setModalAberto('registros_storage')} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <FolderOpen className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              <FolderOpen className="w-5 h-5 text-purple-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
               {sidebarExpandida && <span className="truncate">Registros</span>}
             </button>
             {!sidebarExpandida && (
@@ -1330,32 +1364,9 @@ export default function App() {
             )}
           </div>
 
-          <div className="my-2 border-t border-slate-100" />
+          <div className="my-2 border-t border-slate-200" />
 
-          <div className="relative group/tip">
-            {!caixaAberto ? (
-              <button 
-                onClick={() => setModalAberto('abrir')} 
-                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 font-bold text-xs transition-all cursor-pointer group/btn"
-              >
-                <Key className="w-5 h-5 shrink-0 group-hover/btn:scale-110 transition-transform" />
-                {sidebarExpandida && <span className="truncate">Abrir Caixa</span>}
-              </button>
-            ) : (
-              <button 
-                onClick={() => setModalAberto('fechar')} 
-                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-bold text-xs transition-all cursor-pointer group/btn"
-              >
-                <Lock className="w-5 h-5 shrink-0 group-hover/btn:scale-110 transition-transform" />
-                {sidebarExpandida && <span className="truncate">Fechar Caixa</span>}
-              </button>
-            )}
-            {!sidebarExpandida && (
-              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
-                {!caixaAberto ? "Abrir Caixa" : "Fechar Caixa"}
-              </div>
-            )}
-          </div>
+
         </div>
 
         {/* BOTÃO RECOLHER/EXPANDIR COM DESTAQUE REFINADO */}
