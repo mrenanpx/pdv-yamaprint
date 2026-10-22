@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export const gerarPDFNavegador = (unidade: string, sessao: any, resumo: any) => {
   const doc = new jsPDF();
@@ -20,10 +20,10 @@ export const gerarPDFNavegador = (unidade: string, sessao: any, resumo: any) => 
 
   const dadosSetores = Object.entries(resumo.totais.porSetor).map(([setor, valor]: [string, any]) => [
     setor,
-    `R$ ${valor.toFixed(2).replace('.', ',')}`
+    `R$ ${Number(valor || 0).toFixed(2).replace('.', ',')}`
   ]);
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: 42,
     head: [['SETOR', 'FATURAMENTO']],
     body: dadosSetores,
@@ -33,23 +33,23 @@ export const gerarPDFNavegador = (unidade: string, sessao: any, resumo: any) => 
   });
 
   // Tabela 2: Resumo Financeiro
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
+  const finalY = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 10 : 70;
   doc.setFont("Helvetica", "bold");
   doc.text("2. Resumo Financeiro e Fechamento de Caixa", 14, finalY);
 
   const dadosTotais = [
     ['Troco Inicial', `R$ ${Number(sessao.troco_inicial || 0).toFixed(2).replace('.', ',')}`],
-    ['Total em Dinheiro', `R$ ${resumo.totais.porPagamento.DINHEIRO.toFixed(2).replace('.', ',')}`],
-    ['Total em PIX', `R$ ${resumo.totais.porPagamento.PIX.toFixed(2).replace('.', ',')}`],
-    ['Total em Débito', `R$ ${resumo.totais.porPagamento.DÉBITO.toFixed(2).replace('.', ',')}`],
-    ['Total em Crédito', `R$ ${resumo.totais.porPagamento.CRÉDITO.toFixed(2).replace('.', ',')}`],
-    ['Repasse 2º Caixa (Almoço)', `R$ ${resumo.totais.repasseCaixa2.toFixed(2).replace('.', ',')}`],
-    ['TICKET MÉDIO', `R$ ${resumo.totais.ticketMedio.toFixed(2).replace('.', ',')}`],
-    ['FATURAMENTO TOTAL', `R$ ${resumo.totais.totalVendas.toFixed(2).replace('.', ',')}`],
-    ['SALDO EM CAIXA', `R$ ${resumo.totais.saldoCaixa.toFixed(2).replace('.', ',')}`]
+    ['Total em Dinheiro', `R$ ${Number(resumo.totais.porPagamento?.DINHEIRO || 0).toFixed(2).replace('.', ',')}`],
+    ['Total em PIX', `R$ ${Number(resumo.totais.porPagamento?.PIX || 0).toFixed(2).replace('.', ',')}`],
+    ['Total em Débito', `R$ ${Number(resumo.totais.porPagamento?.DÉBITO || 0).toFixed(2).replace('.', ',')}`],
+    ['Total em Crédito', `R$ ${Number(resumo.totais.porPagamento?.CRÉDITO || 0).toFixed(2).replace('.', ',')}`],
+    ['Repasse 2º Caixa (Almoço)', `R$ ${Number(resumo.totais.repasseCaixa2 || 0).toFixed(2).replace('.', ',')}`],
+    ['TICKET MÉDIO', `R$ ${Number(resumo.totais.ticketMedio || 0).toFixed(2).replace('.', ',')}`],
+    ['FATURAMENTO TOTAL', `R$ ${Number(resumo.totais.totalVendas || 0).toFixed(2).replace('.', ',')}`],
+    ['SALDO EM CAIXA', `R$ ${Number(resumo.totais.saldoCaixa || 0).toFixed(2).replace('.', ',')}`]
   ];
 
-  (doc as any).autoTable({
+  autoTable(doc, {
     startY: finalY + 4,
     body: dadosTotais,
     theme: 'grid',

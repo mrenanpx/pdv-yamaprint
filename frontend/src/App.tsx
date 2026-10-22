@@ -8,7 +8,8 @@ import {
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from './supabaseClient';
-import { gerarPDFNavegador } from './gerar_pdfs_profissionais';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const SETORES = [
   { id: 'MATERIAIS', label: 'MATERIAL', icon: Scissors, shortcut: 'F1' },
@@ -35,14 +36,25 @@ const USUARIOS_CONFIG: Record<string, { unidade: string; email: string }> = {
   "loja-SUZANO": { unidade: "SUZANO", email: "suzano@yamaprint.local" }
 };
 
+const formatarMoedaPtBr = (valor: number) => {
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
 export default function App() {
   const [logado, setLogado] = useState(false);
   const [usuario, setUsuario] = useState('loja-MOGI');
   const [senha, setSenha] = useState('');
   const [mostrarSenha, setMostrarSenha] = useState(false);
-  const [unidade, setUnidade] = useState('MOGI');
+  
+  const [unidade, setUnidade] = useState(() => {
+    return localStorage.getItem('yama_unidade') || 'MOGI';
+  });
 
-  const [statusCaixa, setStatusCaixa] = useState<Record<string, any>>({ status: 'Fechado' });
+  useEffect(() => {
+    localStorage.setItem('yama_unidade', unidade);
+  }, [unidade]);
+
+  const [statusCaixa, setStatusCaixa] = useState<Record<string, any>>({ status: 'A Carregando...' });
   const [setorAtivo, setSetorAtivo] = useState<string | null>(null);
   
   const [precoInput, setPrecoInput] = useState<string>('0');
@@ -81,6 +93,21 @@ export default function App() {
   const inputTrocoRef = useRef<HTMLInputElement>(null);
   const inputObsRetiradaRef = useRef<HTMLInputElement>(null);
   const totalCarrinho = carrinho.reduce((acc, item) => acc + item.valor * item.qtd, 0);
+
+  useEffect(() => {
+    const verificarSessaoInicial = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setLogado(true);
+          await carregarStatus(unidade);
+        }
+      } catch (e) {
+        console.error("Erro na verificação inicial:", e);
+      }
+    };
+    verificarSessaoInicial();
+  }, [unidade]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -173,14 +200,17 @@ export default function App() {
         password: senha
       });
 
-      if (error) throw error;
+      if (error) {
+        setErroLoginMsg('Senha incorreta ou erro de autenticação.');
+        return;
+      }
 
       setUnidade(config.unidade);
       setLogado(true);
-      carregarStatus(config.unidade);
+      await carregarStatus(config.unidade);
       dispararToast(`Bem-vindo à unidade ${config.unidade}!`, 'sucesso');
     } catch (err: any) {
-      setErroLoginMsg(err.message || 'Usuário ou senha inválidos.');
+      setErroLoginMsg('Erro ao efetuar login.');
     }
   };
 
@@ -195,13 +225,15 @@ export default function App() {
 
   const carregarStatus = async (uni = unidade) => {
     try {
-      const { data: sessoes } = await supabase
+      const { data: sessoes, error: errSessao } = await supabase
         .from("caixa_sessoes")
         .select("*")
         .eq("unidade", uni)
         .eq("status", "ABERTO")
         .order("aberto_em", { ascending: false })
         .limit(1);
+
+      if (errSessao) throw errSessao;
 
       const sessao = sessoes && sessoes.length > 0 ? sessoes[0] : null;
 
@@ -214,6 +246,7 @@ export default function App() {
           vendas: [],
           totais: { totalVendas: 0.0, saldoCaixa: 0.0, totalClientesUnicos: 0, ticketMedio: 0.0, porSetor: {}, porPagamento: { DINHEIRO: 0, PIX: 0, DÉBITO: 0, CRÉDITO: 0 } }
         });
+        setDadosVendasModal([]);
         return;
       }
 
@@ -267,7 +300,7 @@ export default function App() {
             setor: setor,
             hora: dataCriacao.toLocaleTimeString(),
             valor: valor,
-            valorFormatado: `R$ ${valor.toFixed(2).replace('.', ',')}`,
+            valorFormatado: formatarMoedaPtBr(valor),
             pagamento: pagto,
             obs: v.observacao || "",
             isCaixa2: v.is_caixa_2
@@ -280,9 +313,10 @@ export default function App() {
       const ticket_medio = total_clientes > 0 ? total_vendas / total_clientes : 0;
       const dtAbertura = new Date(sessao.aberto_em).toLocaleString();
 
-      setStatusCaixa({
+      const statusObj = {
         status: "Aberto",
         sessaoId: sessao.id,
+        dataAberturaISO: sessao.aberto_em.slice(0, 10),
         dataHora: dtAbertura,
         trocoInicial: parseFloat(sessao.troco_inicial).toFixed(2),
         caixa2Ativo: sessao.caixa_2_ativo,
@@ -296,7 +330,10 @@ export default function App() {
           porSetor: por_setor,
           porPagamento: por_pagto
         }
-      });
+      };
+
+      setStatusCaixa(statusObj);
+      setDadosVendasModal(vendas_formatadas);
     } catch (err) {
       console.error(err);
     }
@@ -353,6 +390,177 @@ export default function App() {
         return;
       }
 
+      const dataCaixa = statusCaixa.dataAberturaISO || new Date().toISOString().slice(0, 10);
+      const unidadeLower = unidade.toLowerCase();
+
+      // ==========================================
+      // 1. GERAR E GUARDAR PDF DE RESUMO COM 3 TABELAS
+      // ==========================================
+      const docResumo = new jsPDF();
+      docResumo.setFont("Helvetica", "bold");
+      docResumo.setFontSize(14);
+      docResumo.text(`RELATÓRIO DE FECHAMENTO DE CAIXA`, 14, 18);
+      docResumo.text(`UNIDADE ${unidade}`, 14, 25);
+
+      docResumo.setFont("Helvetica", "normal");
+      docResumo.setFontSize(10);
+      const dataEmissaoStr = new Date().toLocaleString();
+      docResumo.text(`Data de Emissão: ${dataEmissaoStr} | Clientes Atendidos: ${statusCaixa.totais.totalClientesUnicos}`, 14, 32);
+
+      // Tabela 1: Setores
+      docResumo.setFont("Helvetica", "bold");
+      docResumo.text("1. Faturamento Detalhado por Setor", 14, 42);
+
+      const dadosSetorPdf = Object.entries(statusCaixa.totais.porSetor || {}).map(([setor, valor]) => [
+        setor,
+        formatarMoedaPtBr(Number(valor))
+      ]);
+
+      autoTable(docResumo, {
+        startY: 46,
+        head: [['SETOR', 'FATURAMENTO']],
+        body: dadosSetorPdf,
+        theme: 'grid',
+        styles: { font: 'Helvetica', fontSize: 10 },
+        headStyles: { fillColor: [15, 23, 42], fontSize: 10 },
+        columnStyles: { 
+          0: { cellWidth: 120 },
+          1: { cellWidth: 62, halign: 'right' } 
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const setorNome = data.row.raw[0];
+            if (setorNome === 'RETIRADA') {
+              data.cell.styles.textColor = [225, 29, 72];
+            }
+          }
+        }
+      });
+
+      let nextY = (docResumo as any).lastAutoTable.finalY + 10;
+
+      // Tabela 2: Resumo Financeiro
+      docResumo.setFont("Helvetica", "bold");
+      docResumo.text("2. Resumo Financeiro", 14, nextY);
+
+      const dadosResumoFin = [
+        ['Troco Inicial', formatarMoedaPtBr(Number(statusCaixa.trocoInicial || 0))],
+        ['Total em Dinheiro', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.DINHEIRO || 0))],
+        ['Total em PIX', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.PIX || 0))],
+        ['Total em Débito', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.DÉBITO || 0))],
+        ['Total em Crédito', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.CRÉDITO || 0))],
+        ['Repasse 2º Caixa (Almoço)', formatarMoedaPtBr(Number(statusCaixa.totais.repasseCaixa2 || 0))]
+      ];
+
+      autoTable(docResumo, {
+        startY: nextY + 4,
+        body: dadosResumoFin,
+        theme: 'grid',
+        styles: { font: 'Helvetica', fontSize: 10 },
+        columnStyles: { 
+          0: { cellWidth: 120, fontStyle: 'bold' }, 
+          1: { cellWidth: 62, halign: 'right' } 
+        }
+      });
+
+      nextY = (docResumo as any).lastAutoTable.finalY + 10;
+
+      // Tabela 3: Fechamento de Caixa
+      docResumo.setFont("Helvetica", "bold");
+      docResumo.text("3. Fechamento de Caixa", 14, nextY);
+
+      const dadosFechamentoCaixa = [
+        ['Ticket Médio', formatarMoedaPtBr(Number(statusCaixa.totais.ticketMedio || 0))],
+        ['Faturamento Total', formatarMoedaPtBr(Number(statusCaixa.totais.totalVendas || 0))],
+        ['Saldo em Caixa', formatarMoedaPtBr(Number(statusCaixa.totais.saldoCaixa || 0))]
+      ];
+
+      autoTable(docResumo, {
+        startY: nextY + 4,
+        body: dadosFechamentoCaixa,
+        theme: 'grid',
+        styles: { font: 'Helvetica', fontSize: 10 },
+        columnStyles: { 
+          0: { cellWidth: 120, fontStyle: 'bold' }, 
+          1: { cellWidth: 62, halign: 'right' } 
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const label = data.row.raw[0];
+            if (label === 'Faturamento Total') {
+              data.cell.styles.textColor = [14, 116, 144]; // Azul escuro
+              data.cell.styles.fontStyle = 'bold';
+            } else if (label === 'Saldo em Caixa') {
+              data.cell.styles.textColor = [5, 150, 105]; // Verde escuro
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        }
+      });
+
+      const blobResumo = docResumo.output('blob');
+      const caminhoResumo = `${unidadeLower}/resumo/${dataCaixa}-R.pdf`;
+
+      await supabase.storage
+        .from('relatorios')
+        .upload(caminhoResumo, blobResumo, { contentType: 'application/pdf', upsert: true });
+
+      // ==========================================
+      // 2. GERAR E GUARDAR PDF DE VENDAS DETALHADAS
+      // ==========================================
+      const docVendas = new jsPDF();
+      docVendas.setFont("Helvetica", "bold");
+      docVendas.setFontSize(14);
+      docVendas.text(`REGISTRO DETALHADO DE VENDAS — UNIDADE ${unidade}`, 14, 20);
+
+      docVendas.setFont("Helvetica", "normal");
+      docVendas.setFontSize(10);
+      docVendas.text(`Data de Abertura: ${dataCaixa}`, 14, 28);
+
+      const linhasVendasPdf = (statusCaixa.vendas || []).map((v: any) => [
+        `#${v.id}`,
+        v.setor,
+        v.hora,
+        v.valorFormatado,
+        v.pagamento,
+        v.obs || '-'
+      ]);
+
+      autoTable(docVendas, {
+        startY: 35,
+        head: [['ID', 'Setor', 'Hora', 'Valor', 'Pagamento', 'Observação']],
+        body: linhasVendasPdf,
+        theme: 'grid',
+        styles: { font: 'Helvetica', fontSize: 10 },
+        headStyles: { fillColor: [15, 23, 42], fontSize: 10 },
+        columnStyles: { 
+          0: { cellWidth: 15 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 22 },
+          3: { cellWidth: 28, halign: 'right' },
+          4: { cellWidth: 26 },
+          5: { cellWidth: 56 }
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const setorVal = data.row.raw[1];
+            if (setorVal === 'RETIRADA') {
+              data.cell.styles.textColor = [225, 29, 72];
+            }
+          }
+        }
+      });
+
+      const blobVendas = docVendas.output('blob');
+      const caminhoVendas = `${unidadeLower}/vendas/${dataCaixa}-V.pdf`;
+
+      await supabase.storage
+        .from('relatorios')
+        .upload(caminhoVendas, blobVendas, { contentType: 'application/pdf', upsert: true });
+
+      // ==========================================
+      // 3. ATUALIZAR STATUS NO BANCO PARA FECHADO
+      // ==========================================
       const { error } = await supabase
         .from("caixa_sessoes")
         .update({ status: "FECHADO", fechado_em: new Date().toISOString() })
@@ -360,14 +568,13 @@ export default function App() {
 
       if (error) throw error;
 
-      gerarPDFNavegador(unidade, { troco_inicial: statusCaixa.trocoInicial }, statusCaixa);
-
-      setMensagemSucesso("Caixa fechado com sucesso!\nO relatório PDF foi gerado diretamente no seu computador.");
+      setMensagemSucesso("Caixa fechado com sucesso!\nOs relatórios foram guardados com sucesso como (data)-R.pdf e (data)-V.pdf nas respetivas pastas.");
       setModalAberto('sucesso_fechamento');
       await carregarStatus();
-      dispararToast('Caixa fechado e PDF gerado!', 'sucesso');
-    } catch (err) {
-      alert('Erro ao fechar caixa.');
+      dispararToast('Caixa fechado e relatórios guardados!', 'sucesso');
+    } catch (err: any) {
+      console.error("Erro ao fechar caixa:", err);
+      alert('Erro ao fechar caixa: ' + (err.message || 'Erro desconhecido'));
       setModalAberto(null);
     } finally {
       setCarregando(false);
@@ -538,8 +745,8 @@ export default function App() {
       setMotivoCancelamento('');
       setSucessoExclusaoMsg('Venda excluída com sucesso.');
       dispararToast('VENDA EXCLUÍDA / CANCELADA', 'retirada');
+      
       await carregarStatus();
-      setDadosVendasModal(statusCaixa.vendas || []);
     } catch (err) {
       alert('Erro ao excluir venda.');
     } finally {
@@ -623,15 +830,8 @@ export default function App() {
           </form>
 
           {erroLoginMsg && (
-            <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white border border-slate-200 p-6 rounded-3xl w-[360px] text-center shadow-2xl">
-                <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-2xl mx-auto flex items-center justify-center mb-3">
-                  <AlertCircle className="w-6 h-6" />
-                </div>
-                <h3 className="text-lg font-black text-slate-800 mb-1">Acesso Negado</h3>
-                <p className="text-xs font-semibold text-slate-500 mb-5">{erroLoginMsg}</p>
-                <button onClick={() => setErroLoginMsg(null)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl font-bold text-xs uppercase cursor-pointer">OK</button>
-              </div>
+            <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-xs font-bold">
+              {erroLoginMsg}
             </div>
           )}
         </motion.div>
@@ -777,7 +977,10 @@ export default function App() {
               </div>
             )}
           </div>
+        </div>
 
+        {/* Bloco Inferior: Botão Sair do Sistema e Recolher */}
+        <div className="p-3 border-t border-white/10 flex flex-col gap-2 bg-black/20">
           <div className="relative group/tip">
             <button 
               onClick={fazerLogout} 
@@ -792,9 +995,7 @@ export default function App() {
               </div>
             )}
           </div>
-        </div>
 
-        <div className="p-3 border-t border-white/10 flex justify-center bg-black/20">
           <button 
             onClick={() => setSidebarExpandida(!sidebarExpandida)}
             title={sidebarExpandida ? "Recolher menu" : "Expandir menu"}
@@ -1068,9 +1269,9 @@ export default function App() {
                     <Lock className="w-6 h-6" />
                   </div>
                   <h3 className="text-xl font-black text-slate-800 mb-1">Fechar Caixa</h3>
-                  <p className="text-xs font-semibold text-slate-500 mb-6">Deseja fechar o caixa e gerar os relatórios?</p>
+                  <p className="text-xs font-semibold text-slate-500 mb-6">Deseja fechar o caixa e guardar os relatórios nas pastas de Resumo e Vendas?</p>
                   {carregando ? (
-                    <div className="flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Gerando PDF...</div>
+                    <div className="flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> A guardar relatórios...</div>
                   ) : (
                     <div className="flex gap-3">
                       <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer">Não</button>
