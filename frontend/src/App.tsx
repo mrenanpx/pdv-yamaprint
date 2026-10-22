@@ -3,8 +3,8 @@ import {
   Scissors, Copy, Printer, Shield, BookOpen, Stamp, 
   Palette, Monitor, Package, CalendarCheck, PiggyBank,
   UserCheck, List, Key, Lock, Trash2, 
-  X, CheckCircle2, Clock, ArrowRight, LogOut, Search, Loader2, AlertCircle, Eye, EyeOff, FolderOpen,  TrendingUp, DollarSign, Receipt, PieChart, Users, ChevronLeft, ChevronRight, FileText, Download, Calendar,
-  Banknote, QrCode, CreditCard
+  X, CheckCircle2, ArrowRight, LogOut, Search, Loader2, AlertCircle, Eye, EyeOff, FolderOpen,  TrendingUp, DollarSign, Receipt, PieChart, Users, ChevronLeft, ChevronRight, FileText, Download, Calendar,
+  Banknote, QrCode, CreditCard, Calculator, FileSpreadsheet, Plus, Clock
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -32,6 +32,27 @@ const USUARIOS_CONFIG: Record<string, { unidade: string; email: string }> = {
   "loja-SUZANO": { unidade: "SUZANO", email: "suzano@yamaprint.local" }
 };
 
+const DADOS_UNIDADES: Record<string, any> = {
+  "MOGI": {
+    razao: "YAMA PRINT - PAPELARIA E GRÁFICA RÁPIDA",
+    cnpj: "23.870.982/0001-78",
+    site: "www.yamaprint.com.br",
+    endereco: "Rua Princesa Isabel de Bragança, 334 - Centro - Mogi das Cruzes/SP",
+    cep: "08710-460",
+    whatsapp: "11 3458-9796",
+    email: "mogi@yamaprint.com.br"
+  },
+  "SUZANO": {
+    razao: "YAMA PRINT - PAPELARIA E GRÁFICA RÁPIDA",
+    cnpj: "58.504.948/0001-64",
+    site: "www.yamaprint.com.br",
+    endereco: "Av. General Francisco Glicério, 901 - Centro - Suzano /SP",
+    cep: "08674-003",
+    whatsapp: "11 4744-7839",
+    email: "suzano@yamaprint.com.br"
+  }
+};
+
 const formatarMoedaPtBr = (valor: number) => {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
@@ -40,6 +61,23 @@ const formatarDataParaPadrao = (dataIso: string) => {
   if (!dataIso) return '';
   const [ano, mes, dia] = dataIso.split('-');
   return `${dia}_${mes}_${ano.slice(2)}`;
+};
+
+const formatarCpfCnpj = (valor: string) => {
+  const apenasDigitos = valor.replace(/\D/g, '');
+  if (apenasDigitos.length <= 11) {
+    return apenasDigitos
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  } else {
+    return apenasDigitos
+      .replace(/^(\d{2})(\d)/, '$1.$2')
+      .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d)/, '.$1/$2')
+      .replace(/(\d{4})(\d)/, '$1-$2')
+      .slice(0, 18);
+  }
 };
 
 export default function App() {
@@ -72,6 +110,26 @@ export default function App() {
 
   const [sidebarExpandida, setSidebarExpandida] = useState(true);
   
+  const [calcDisplay, setCalcDisplay] = useState('0');
+
+  const [nomeClienteOrcamento, setNomeClienteOrcamento] = useState('');
+  const [docClienteOrcamento, setDocClienteOrcamento] = useState('');
+  const [descontoPercentual, setDescontoPercentual] = useState<string>('');
+  const [itensOrcamento, setItensOrcamento] = useState<Array<{ descricao: string; qtd: number; valorUnit: number }>>([
+    { descricao: '', qtd: 1, valorUnit: 0 }
+  ]);
+
+  const ultimoItemRef = useRef<HTMLInputElement>(null);
+
+  const adicionarItemOrcamento = () => {
+    setItensOrcamento(prev => [...prev, { descricao: '', qtd: 1, valorUnit: 0 }]);
+    setTimeout(() => {
+      if (ultimoItemRef.current) {
+        ultimoItemRef.current.focus();
+      }
+    }, 50);
+  };
+
   const [toasts, setToasts] = useState<Array<{ id: number; mensagem: string; tipo: 'sucesso' | 'erro' | 'aviso' | 'retirada' | 'neutro' }>>([]);
   const contadorToastRef = useRef(0);
 
@@ -135,8 +193,40 @@ export default function App() {
   }, [unidade]);
 
   useEffect(() => {
+    const handleCalcKeyDown = (e: KeyboardEvent) => {
+      if (modalAberto !== 'calculadora') return;
+      
+      let tecla = e.key;
+      if (tecla === ',') tecla = '.';
+
+      const permitidas = ['0','1','2','3','4','5','6','7','8','9','+','-','*','/','.','(',')'];
+      if (permitidas.includes(tecla)) {
+        e.preventDefault();
+        setCalcDisplay(prev => prev === '0' || prev === 'Erro' ? tecla : prev + tecla);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        try {
+          const resultado = Function('"use strict";return (' + calcDisplay.replace(/×/g, '*') + ')')();
+          setCalcDisplay(String(resultado));
+        } catch {
+          setCalcDisplay('Erro');
+        }
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        setCalcDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : '0');
+      } else if (e.key.toLowerCase() === 'c' || e.key === 'Escape') {
+        e.preventDefault();
+        setCalcDisplay('0');
+      }
+    };
+
+    window.addEventListener('keydown', handleCalcKeyDown);
+    return () => window.removeEventListener('keydown', handleCalcKeyDown);
+  }, [modalAberto, calcDisplay]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && modalAberto !== 'calculadora') {
         if (vendaParaCancelar) {
           setVendaParaCancelar(null);
         } else if (modalAberto) {
@@ -242,6 +332,111 @@ export default function App() {
       console.error('Erro ao baixar PDF:', error);
       alert('Não foi possível efetuar o download do arquivo.');
     }
+  };
+
+  const gerarPdfOrcamento = () => {
+    if (!nomeClienteOrcamento.trim()) {
+      alert('Informe o nome do cliente para o orçamento.');
+      return;
+    }
+
+    const infoLoja = DADOS_UNIDADES[unidade] || DADOS_UNIDADES["MOGI"];
+    const doc = new jsPDF();
+
+    try {
+      doc.addImage('/logo-orc.png', 'PNG', 14, 12, 22, 22);
+    } catch (e) {
+      console.warn("Logotipo não carregado no PDF, prosseguindo sem imagem.", e);
+    }
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42); 
+    doc.text(infoLoja.razao, 40, 19);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(70, 70, 70);
+    doc.text(`CNPJ: ${infoLoja.cnpj}  |  Site: ${infoLoja.site}`, 40, 26);
+
+    doc.setDrawColor(220, 224, 230);
+    doc.line(14, 39, 196, 39);
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text("ORÇAMENTO DE PRODUTOS E SERVIÇOS", 14, 47);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Cliente: ${nomeClienteOrcamento.trim().toUpperCase()}`, 14, 54);
+    if (docClienteOrcamento.trim()) {
+      doc.text(`CPF/CNPJ: ${formatarCpfCnpj(docClienteOrcamento)}`, 14, 60);
+    }
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString()}`, 14, docClienteOrcamento.trim() ? 66 : 60);
+
+    const corpoTabela = itensOrcamento.map(i => [
+      i.descricao || 'Item sem descrição',
+      i.qtd,
+      formatarMoedaPtBr(i.valorUnit),
+      formatarMoedaPtBr(i.qtd * i.valorUnit)
+    ]);
+
+    const subtotalOrcamento = itensOrcamento.reduce((acc, i) => acc + (i.qtd * i.valorUnit), 0);
+    const percDesconto = parseFloat(descontoPercentual.replace(',', '.')) || 0;
+    const valorDesconto = (subtotalOrcamento * percDesconto) / 100;
+    const valorTotalOrcamento = Math.max(0, subtotalOrcamento - valorDesconto);
+
+    autoTable(doc, {
+      startY: docClienteOrcamento.trim() ? 72 : 66,
+      head: [['DESCRIÇÃO DOS ITENS / SERVIÇOS', 'QTD', 'VALOR UNIT.', 'TOTAL']],
+      body: corpoTabela,
+      theme: 'grid',
+      styles: { font: 'Helvetica', fontSize: 10 },
+      headStyles: { fillColor: [15, 23, 42], fontSize: 10 }, 
+      columnStyles: {
+        0: { cellWidth: 94 },
+        1: { cellWidth: 20, halign: 'center' },
+        2: { cellWidth: 35, halign: 'right' },
+        3: { cellWidth: 33, halign: 'right' }
+      }
+    });
+
+    let finalY = (doc as any).lastAutoTable.finalY + 8;
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(70, 70, 70);
+
+    if (percDesconto > 0) {
+      doc.text(`Subtotal: ${formatarMoedaPtBr(subtotalOrcamento)}`, 196, finalY, { align: 'right' });
+      finalY += 6;
+      doc.text(`Desconto Aplicado (${percDesconto}%): - ${formatarMoedaPtBr(valorDesconto)}`, 196, finalY, { align: 'right' });
+      finalY += 8;
+    }
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`VALOR TOTAL: ${formatarMoedaPtBr(valorTotalOrcamento)}`, 196, finalY, { align: 'right' });
+
+    doc.setFont("Helvetica", "italic");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`* Orçamento válido por 7 (sete) dias a partir da data de emissão.`, 14, finalY + 16);
+    doc.text(`Unidade ${unidade} — Atendimento de Segunda a Sexta - das 9h as 18h | Sábado - das 9h as 14h.`, 14, finalY + 22);
+
+    const posYRodape = doc.internal.pageSize.height - 15;
+    doc.setDrawColor(220, 224, 230);
+    doc.line(14, posYRodape - 6, 196, posYRodape - 6);
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(90, 90, 90);
+    doc.text(`${infoLoja.endereco}  |  CEP: ${infoLoja.cep}  |  WhatsApp: ${infoLoja.whatsapp}  |  E-mail: ${infoLoja.email}`, 105, posYRodape, { align: 'center' });
+
+    doc.save(`Orcamento_${nomeClienteOrcamento.trim().replace(/\s+/g, '_').toUpperCase()}.pdf`);
+    setModalAberto(null);
+    dispararToast('Orçamento gerado com sucesso!', 'sucesso');
   };
 
   const lidarComMudancaPreco = (valorStr: string) => {
@@ -477,7 +672,7 @@ export default function App() {
       const docResumo = new jsPDF();
       
       docResumo.setFont("Helvetica", "bold");
-      docResumo.setFontSize(13);
+      docResumo.setFontSize(16);
       docResumo.text(`RELATÓRIO DE FECHAMENTO DE CAIXA — UNIDADE `, 14, 18);
       const larguraTextoBase = docResumo.getTextWidth(`RELATÓRIO DE FECHAMENTO DE CAIXA — UNIDADE `);
       docResumo.setTextColor(225, 29, 72);
@@ -485,7 +680,7 @@ export default function App() {
 
       docResumo.setTextColor(15, 23, 42);
       docResumo.setFont("Helvetica", "normal");
-      docResumo.setFontSize(10);
+      docResumo.setFontSize(12);
       docResumo.text(`DATA DA ABERTURA: ${dataCaixaIso.split('-').reverse().join('/')}   |   Clientes Atendidos: ${statusCaixa.totais.totalClientesUnicos}`, 14, 27);
 
       // Tabela 1: Setores
@@ -502,8 +697,8 @@ export default function App() {
         head: [['SETOR', 'FATURAMENTO']],
         body: dadosSetorPdf,
         theme: 'grid',
-        styles: { font: 'Helvetica', fontSize: 10 },
-        headStyles: { fillColor: [15, 23, 42], fontSize: 10 },
+        styles: { font: 'Helvetica', fontSize: 12, fontStyle: 'bold' },
+        headStyles: { fillColor: [0, 0, 0], fontSize: 12 },
         columnStyles: { 
           0: { cellWidth: 120 },
           1: { cellWidth: 62, halign: 'right' } 
@@ -521,27 +716,36 @@ export default function App() {
       let nextY = (docResumo as any).lastAutoTable.finalY + 10;
 
       // Tabela 2: Resumo Financeiro
-      docResumo.setFont("Helvetica", "bold");
+      docResumo.setFont("Helvetica", "bold",);
       docResumo.text("2. Resumo Financeiro", 14, nextY);
 
       const dadosResumoFin = [
-        ['Troco Inicial', formatarMoedaPtBr(Number(statusCaixa.trocoInicial || 0))],
-        ['Total em Dinheiro', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.DINHEIRO || 0))],
-        ['Total em PIX', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.PIX || 0))],
-        ['Total em Débito', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.DÉBITO || 0))],
-        ['Total em Crédito', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.CRÉDITO || 0))],
-        ['Repasse 2º Caixa (Almoço)', formatarMoedaPtBr(Number(statusCaixa.totais.repasseCaixa2 || 0))]
+        ['TROCO INICIAL', formatarMoedaPtBr(Number(statusCaixa.trocoInicial || 0))],
+        ['TOTAL EM DINHEIRO', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.DINHEIRO || 0))],
+        ['TOTAL EM PIX', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.PIX || 0))],
+        ['TOTAL EM DÉBITO', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.DÉBITO || 0))],
+        ['TOTAL EM CRÉDITO', formatarMoedaPtBr(Number(statusCaixa.totais.porPagamento?.CRÉDITO || 0))],
+        ['REPASSE 2º CAIXA (Almoço)', formatarMoedaPtBr(Number(statusCaixa.totais.repasseCaixa2 || 0))]
       ];
 
       autoTable(docResumo, {
         startY: nextY + 4,
         body: dadosResumoFin,
         theme: 'grid',
-        styles: { font: 'Helvetica', fontSize: 10 },
+        styles: { font: 'Helvetica', fontSize: 12, fontStyle: 'bold'},
         columnStyles: { 
           0: { cellWidth: 120, fontStyle: 'bold' }, 
           1: { cellWidth: 62, halign: 'right' } 
+        },
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const setorNome = data.row.raw[0];
+            if (setorNome === 'REPASSE 2º CAIXA (Almoço)') {
+              data.cell.styles.textColor = [100, 10, 170];
+            } 
+          }
         }
+        
       });
 
       nextY = (docResumo as any).lastAutoTable.finalY + 10;
@@ -560,7 +764,7 @@ export default function App() {
         startY: nextY + 4,
         body: dadosFechamentoCaixa,
         theme: 'grid',
-        styles: { font: 'Helvetica', fontSize: 10 },
+        styles: { font: 'Helvetica', fontSize: 15 },
         columnStyles: { 
           0: { cellWidth: 120, fontStyle: 'bold' }, 
           1: { cellWidth: 62, halign: 'right' } 
@@ -569,12 +773,16 @@ export default function App() {
           if (data.section === 'body') {
             const label = data.row.raw[0];
             if (label === 'Faturamento Total') {
-              data.cell.styles.textColor = [14, 116, 144];
+              data.cell.styles.textColor = [20, 86, 255];
               data.cell.styles.fontStyle = 'bold';
             } else if (label === 'Saldo em Caixa') {
-              data.cell.styles.textColor = [5, 150, 105];
+              data.cell.styles.textColor = [36, 131, 68];
+              data.cell.styles.fontStyle = 'bold';
+            } else if (label === 'Ticket Médio') {
+              data.cell.styles.textColor = [0, 0, 0];
               data.cell.styles.fontStyle = 'bold';
             }
+            
           }
         }
       });
@@ -657,7 +865,7 @@ export default function App() {
         nome: nomeResumo
       });
 
-      setMensagemSucesso(`Caixa fechado com sucesso!\nO relatório de resumo foi guardado como ${nomeResumo} na respetiva pasta.`);
+      setMensagemSucesso(`O relatório de resumo foi gerado como ${nomeResumo}.`);
       setModalAberto('sucesso_fechamento');
       await carregarStatus();
       dispararToast('Caixa fechado e relatório guardado!', 'sucesso');
@@ -774,6 +982,18 @@ export default function App() {
       setModalAberto('aviso_caixa_fechado');
       return;
     }
+    
+    if (setorAtivo === 'RETIRADA' && formaPagto !== 'DINHEIRO') {
+      dispararToast('Retiradas são permitidas apenas em DINHEIRO.', 'erro');
+      return;
+    }
+
+    const possuiRetirada = carrinho.some(i => i.setor === 'RETIRADA');
+    if (possuiRetirada && formaPagto !== 'DINHEIRO') {
+      dispararToast('O carrinho possui itens de RETIRADA. Selecione DINHEIRO.', 'erro');
+      return;
+    }
+
     if (carrinho.length === 0) {
       setModalAberto('aviso_carrinho_vazio');
       return;
@@ -866,13 +1086,13 @@ export default function App() {
         className="relative flex items-center justify-center h-screen bg-cover bg-center select-none"
         style={{ backgroundImage: `url('/bg/bg.png')` }}
       >
-        <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-xs" />
+        <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs" />
 
         <motion.div 
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
-          className="relative z-10 bg-white/90 backdrop-blur-xl p-10 rounded-3xl shadow-2xl w-[440px] text-center border border-white/40"
+          className="relative z-10 bg-white/95 text-slate-800 backdrop-blur-2xl p-10 rounded-3xl shadow-2xl w-[440px] text-center border border-white/80"
         >
           <div className="w-24 h-24 bg-sky-500/10 rounded-3xl mx-auto flex items-center justify-center shadow-inner mb-5 p-3 border border-sky-500/20">
             <img src="/icon/logo.svg" alt="Logo Yama" className="w-full h-full object-contain text-sky-600 brightness-0 saturate-100 [filter:invert(32%)_sepia(98%)_saturate(1421%)_hue-rotate(185deg)_brightness(94%)_contrast(98%)]" />
@@ -886,7 +1106,7 @@ export default function App() {
               <select 
                 value={usuario} 
                 onChange={e => setUsuario(e.target.value)} 
-                className="w-full px-4 py-3.5 border border-slate-300 rounded-xl bg-white font-bold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none shadow-xs transition"
+                className="w-full px-4 py-3.5 border border-slate-200 rounded-xl bg-slate-50 font-bold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none shadow-2xs transition"
               >
                 <option value="loja-MOGI">Loja Mogi das Cruzes</option>
                 <option value="loja-SUZANO">Loja Suzano</option>
@@ -900,7 +1120,7 @@ export default function App() {
                 onChange={e => setSenha(e.target.value)} 
                 placeholder="••••••••" 
                 required 
-                className="w-full px-4 py-3.5 pr-12 border border-slate-300 rounded-xl bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none shadow-xs transition" 
+                className="w-full px-4 py-3.5 pr-12 border border-slate-200 rounded-xl bg-slate-50 font-semibold text-slate-800 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none shadow-2xs transition" 
               />
               <button 
                 type="button" 
@@ -912,7 +1132,7 @@ export default function App() {
             </div>
             <button 
               type="submit" 
-              className="w-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black py-4 rounded-xl shadow-lg shadow-sky-500/30 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider text-xs"
+              className="w-full bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black py-4 rounded-xl shadow-lg shadow-sky-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 uppercase tracking-wider text-xs"
             >
               <span>Entrar no Sistema</span><ArrowRight className="w-4 h-4" />
             </button>
@@ -929,7 +1149,11 @@ export default function App() {
   }
 
   const caixaAberto = statusCaixa.status === 'Aberto';
-  const totalVendasBadge = statusCaixa.vendas ? statusCaixa.vendas.filter((v: any) => v.pagamento !== 'CANCELADO').length : 0;
+  
+  // Lógica ajustada para contar IDs únicos (clientes) de vendas válidas para o badge
+  const totalVendasBadge = statusCaixa.vendas 
+    ? new Set(statusCaixa.vendas.filter((v: any) => v.pagamento !== 'CANCELADO').map((v: any) => v.id)).size 
+    : 0;
 
   return (
     <div className="flex h-screen bg-slate-100 text-slate-800 select-none overflow-hidden font-sans">
@@ -961,19 +1185,20 @@ export default function App() {
         </AnimatePresence>
       </div>
 
+      {/* SIDEBAR COM TOPO PERFEITAMENTE ALINHADO */}
       <motion.aside 
         animate={{ width: sidebarExpandida ? 250 : 80 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
-        className="bg-gradient-to-b from-blue-900 via-blue-950 to-slate-950 text-white flex flex-col border-r border-blue-900/40 shadow-2xl z-20 relative overflow-hidden"
+        className="bg-white text-slate-800 flex flex-col border-r border-slate-200 shadow-xl z-20 relative overflow-hidden"
       >
-        <div className="p-4 flex items-center gap-3 border-b border-white/10 h-20">
+        <div className="flex items-center gap-3 border-b border-slate-200 h-18 px-4 bg-slate-50/50 shrink-0">
           <div className="w-10 h-10 flex items-center justify-center shrink-0 p-1">
-            <img src="/icon/logo.svg" alt="Logo Yama" className="w-full h-full object-contain brightness-0 invert" />
+            <img src="/icon/logo.svg" alt="Logo Yama" className="w-full h-full object-contain text-sky-600 brightness-0 saturate-100 [filter:invert(32%)_sepia(98%)_saturate(1421%)_hue-rotate(185deg)_brightness(94%)_contrast(98%)]" />
           </div>
           {sidebarExpandida && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="overflow-hidden truncate">
-              <span className="text-[9px] font-black tracking-widest text-sky-400 uppercase block">Yama Print</span>
-              <h2 className="text-xs font-black text-white tracking-wide truncate">LOJA {unidade}</h2>
+              <span className="text-[9px] font-black tracking-widest text-sky-600 uppercase block">Yama Print</span>
+              <h2 className="text-xs font-black text-slate-900 tracking-wide truncate">LOJA {unidade}</h2>
             </motion.div>
           )}
         </div>
@@ -994,14 +1219,14 @@ export default function App() {
                 setValorMax(''); 
                 setModalAberto('listar'); 
               }} 
-              className="w-full flex items-center justify-between px-3.5 py-3 rounded-xl hover:bg-white/10 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+              className="w-full flex items-center justify-between px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
               <div className="flex items-center gap-3.5 truncate">
-                <List className="w-5 h-5 text-sky-400 shrink-0" />
+                <List className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
                 {sidebarExpandida && <span className="truncate">Listar Vendas</span>}
               </div>
               {sidebarExpandida && totalVendasBadge > 0 && (
-                <span className="bg-sky-500 text-white font-black text-[10px] px-2 py-0.5 rounded-full shadow-xs">
+                <span className="bg-sky-600 text-white font-black text-[10px] px-2 py-0.5 rounded-full shadow-2xs">
                   {totalVendasBadge}
                 </span>
               )}
@@ -1023,9 +1248,9 @@ export default function App() {
                 setDadosVendasModal(statusCaixa.vendas || []); 
                 setModalAberto('fluxo_caixa'); 
               }} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-white/10 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-teal-50 text-slate-600 hover:text-teal-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <PieChart className="w-5 h-5 text-teal-400 shrink-0" />
+              <PieChart className="w-5 h-5 text-teal-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
               {sidebarExpandida && <span className="truncate">Fluxo de Caixa</span>}
             </button>
             {!sidebarExpandida && (
@@ -1035,14 +1260,52 @@ export default function App() {
             )}
           </div>
 
-          <div className="my-2 border-t border-white/10" />
+          {/* BOTÃO DE CALCULADORA */}
+          <div className="relative group/tip">
+            <button 
+              onClick={() => setModalAberto('calculadora')} 
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
+            >
+              <Calculator className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              {sidebarExpandida && <span className="truncate">Calculadora</span>}
+            </button>
+            {!sidebarExpandida && (
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
+                Calculadora
+              </div>
+            )}
+          </div>
+
+          {/* BOTÃO DE ORÇAMENTO */}
+          <div className="relative group/tip">
+            <button 
+              onClick={() => {
+                setNomeClienteOrcamento('');
+                setDocClienteOrcamento('');
+                setDescontoPercentual('');
+                setItensOrcamento([{ descricao: '', qtd: 1, valorUnit: 0 }]);
+                setModalAberto('orcamento');
+              }} 
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-blue-50 text-slate-600 hover:text-blue-700 font-bold text-xs transition-all cursor-pointer group/btn"
+            >
+              <FileSpreadsheet className="w-5 h-5 text-blue-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
+              {sidebarExpandida && <span className="truncate">Orçamento</span>}
+            </button>
+            {!sidebarExpandida && (
+              <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-xl opacity-0 group-hover/tip:opacity-100 pointer-events-none transition whitespace-nowrap z-50 border border-slate-700">
+                Orçamento
+              </div>
+            )}
+          </div>
+
+          <div className="my-2 border-t border-slate-100" />
 
           <div className="relative group/tip">
             <button 
               onClick={() => setModalAberto('troca')} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-white/10 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-purple-50 text-slate-600 hover:text-purple-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <UserCheck className="w-5 h-5 text-purple-400 shrink-0" />
+              <UserCheck className="w-5 h-5 text-purple-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
               {sidebarExpandida && <span className="truncate">Troca de Caixa</span>}
             </button>
             {!sidebarExpandida && (
@@ -1055,9 +1318,9 @@ export default function App() {
           <div className="relative group/tip">
             <button 
               onClick={() => setModalAberto('registros_storage')} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-white/10 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <FolderOpen className="w-5 h-5 text-sky-300 shrink-0" />
+              <FolderOpen className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-110 transition-transform" />
               {sidebarExpandida && <span className="truncate">Registros</span>}
             </button>
             {!sidebarExpandida && (
@@ -1067,23 +1330,23 @@ export default function App() {
             )}
           </div>
 
-          <div className="my-2 border-t border-white/10" />
+          <div className="my-2 border-t border-slate-100" />
 
           <div className="relative group/tip">
             {!caixaAberto ? (
               <button 
                 onClick={() => setModalAberto('abrir')} 
-                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-emerald-600/30 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 font-bold text-xs transition-all cursor-pointer group/btn"
               >
-                <Key className="w-5 h-5 text-emerald-400 shrink-0" />
+                <Key className="w-5 h-5 shrink-0 group-hover/btn:scale-110 transition-transform" />
                 {sidebarExpandida && <span className="truncate">Abrir Caixa</span>}
               </button>
             ) : (
               <button 
                 onClick={() => setModalAberto('fechar')} 
-                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-rose-600/30 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+                className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-rose-50 text-rose-600 hover:text-rose-700 font-bold text-xs transition-all cursor-pointer group/btn"
               >
-                <Lock className="w-5 h-5 text-rose-400 shrink-0" />
+                <Lock className="w-5 h-5 shrink-0 group-hover/btn:scale-110 transition-transform" />
                 {sidebarExpandida && <span className="truncate">Fechar Caixa</span>}
               </button>
             )}
@@ -1095,13 +1358,14 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-3 border-t border-white/10 flex flex-col gap-2 bg-black/20">
+        {/* BOTÃO RECOLHER/EXPANDIR COM DESTAQUE REFINADO */}
+        <div className="p-3 border-t border-slate-200 flex flex-col gap-2 bg-slate-50">
           <div className="relative group/tip">
             <button 
               onClick={fazerLogout} 
-              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-rose-700/40 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
+              className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              <LogOut className="w-5 h-5 text-rose-400 shrink-0" />
+              <LogOut className="w-5 h-5 text-rose-500 shrink-0 group-hover/btn:scale-110 transition-transform" />
               {sidebarExpandida && <span className="truncate">Sair do Sistema</span>}
             </button>
             {!sidebarExpandida && (
@@ -1114,12 +1378,12 @@ export default function App() {
           <button 
             onClick={() => setSidebarExpandida(!sidebarExpandida)}
             title={sidebarExpandida ? "Recolher menu" : "Expandir menu"}
-            className="w-full flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/40 border border-sky-400/30 text-white transition cursor-pointer shadow-md group"
+            className="w-full flex items-center justify-center gap-2 py-3.5 px-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-black text-xs transition shadow-md shadow-sky-500/20 cursor-pointer group"
           >
             {sidebarExpandida ? (
               <>
                 <ChevronLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-sky-200">Recolher</span>
+                <span className="uppercase tracking-widest text-[11px]">Recolher</span>
               </>
             ) : (
               <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
@@ -1130,12 +1394,12 @@ export default function App() {
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         
-        <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200/90 shadow-2xs z-10 h-18">
+        <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shadow-2xs z-10 h-18">
           <div className="flex items-center gap-6 text-xs font-medium">
             <div className="flex items-center gap-2.5">
               <span className="text-slate-400 font-bold">STATUS:</span>
               <div className="flex items-center gap-2">
-                <span className={`font-extrabold px-2.5 py-1 rounded-full shadow-2xs ${caixaAberto ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
+                <span className={`font-extrabold px-3 py-1 rounded-full shadow-2xs ${caixaAberto ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
                   {statusCaixa.status.toUpperCase()}
                 </span>
                 <span className="relative flex h-3 w-3">
@@ -1153,19 +1417,17 @@ export default function App() {
             
             <div className="flex items-center gap-2">
               <span className="text-slate-400 font-bold">OPERAÇÃO:</span>
-              <span className={`font-extrabold px-3 py-1 rounded-full border shadow-2xs ${statusCaixa.caixa2Ativo ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-purple-100 text-purple-700 border-purple-200'}`}>
+              <span className={`font-extrabold px-3.5 py-1 rounded-full border shadow-2xs ${statusCaixa.caixa2Ativo ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-purple-100 text-purple-700 border-purple-200'}`}>
                 {statusCaixa.caixa2Ativo ? 'ALMOÇO' : 'CAIXA PRINCIPAL'}
               </span>
             </div>
           </div>
         </header>
 
-        {/* MAIN COM SETORES AMPLIADOS E SEM O BLOCO DE ÚLTIMAS ENTRADAS */}
-        <main className="flex flex-1 gap-6 p-6 overflow-hidden items-stretch pb-12">
+        <main className="flex flex-1 gap-6 p-6 overflow-hidden items-stretch pb-12 bg-slate-100">
           
-          {/* COLUNA ESQUERDA (Setores otimizados verticalmente) */}
           <div className="w-[42%] flex flex-col h-full">
-            <div className="grid grid-cols-2 gap-3 flex-1 min-h-0 content-stretch">
+            <div className="grid grid-cols-2 gap-3.5 flex-1 min-h-0 content-stretch">
               {SETORES.map((s) => {
                 const Icon = s.icon;
                 const ativo = setorAtivo === s.id;
@@ -1173,14 +1435,14 @@ export default function App() {
                   <button
                     key={s.id}
                     onClick={() => selecionarSetorDinamico(s.id)}
-                    className={`group relative flex items-center px-4 py-3 rounded-2xl border text-xs font-extrabold transition-all cursor-pointer shadow-sm hover:shadow-md active:scale-95 ${
+                    className={`group relative flex items-center px-4 py-3.5 rounded-2xl border text-xs font-extrabold transition-all cursor-pointer shadow-sm hover:shadow-md active:scale-95 ${
                       ativo 
-                        ? (s.isDanger ? 'bg-rose-600 text-white border-rose-600 ring-4 ring-rose-600/20 shadow-rose-500/30' : 'bg-gradient-to-b from-blue-900 to-blue-950 text-white border-blue-900 ring-4 ring-blue-900/20 shadow-blue-900/30') 
-                        : (s.isDanger ? 'bg-white text-slate-700 border-rose-200 hover:bg-rose-50/80' : 'bg-white text-slate-700 border-slate-200/90 hover:bg-blue-50/50')
+                        ? (s.isDanger ? 'bg-rose-600 text-white border-rose-600 ring-4 ring-rose-600/20 shadow-rose-500/30' : 'bg-gradient-to-br from-sky-600 to-blue-700 text-white border-sky-500 ring-4 ring-sky-500/20 shadow-sky-500/20') 
+                        : (s.isDanger ? 'bg-white text-slate-700 border-rose-200 hover:bg-rose-50/80' : 'bg-white text-slate-700 border-slate-200/90 hover:bg-sky-50/50')
                     }`}
                   >
-                    <span className={`absolute top-2 right-2.5 text-[9px] font-black px-1.5 py-0.5 rounded-md ${ativo ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{s.shortcut}</span>
-                    <div className={`p-2.5 rounded-xl mr-3 shrink-0 transition-transform group-hover:scale-105 ${ativo ? 'bg-white/20 text-white' : s.isDanger ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-blue-900'}`}>
+                    <span className={`absolute top-2.5 right-3 text-[9px] font-black px-1.5 py-0.5 rounded-md ${ativo ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{s.shortcut}</span>
+                    <div className={`p-2.5 rounded-xl mr-3.5 shrink-0 transition-transform group-hover:scale-110 ${ativo ? 'bg-white/20 text-white' : s.isDanger ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-sky-600'}`}>
                       <Icon className="w-5 h-5" />
                     </div>
                     <span className="tracking-tight text-left text-xs font-black truncate">{s.label}</span>
@@ -1190,13 +1452,12 @@ export default function App() {
             </div>
           </div>
 
-          {/* COLUNA DIREITA (Registro, Carrinho, Pagamentos com Ícones em Cima) */}
           <div className="w-[58%] flex flex-col gap-5 h-full">
             
             <div className="bg-white border border-slate-200/90 rounded-2xl px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
               <div>
                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block mb-0.5">Item em Registro</span>
-                <span className="text-base font-black text-blue-950 tracking-wide">{setorAtivo || 'Nenhum selecionado'}</span>
+                <span className="text-base font-black text-sky-600 tracking-wide">{setorAtivo || 'Nenhum selecionado'}</span>
               </div>
             </div>
 
@@ -1214,7 +1475,7 @@ export default function App() {
                       adicionarAoCarrinho();
                     }
                   }}
-                  className="w-36 px-3.5 py-2.5 border border-slate-300 bg-slate-50/80 rounded-xl text-base font-black text-slate-800 focus:outline-none focus:border-blue-900 shadow-2xs"
+                  className="w-36 px-3.5 py-2.5 border border-slate-300 bg-slate-50/80 rounded-xl text-base font-black text-slate-800 focus:outline-none focus:border-sky-500 shadow-2xs"
                 />
               </div>
               <div className="flex items-center gap-2.5">
@@ -1234,7 +1495,7 @@ export default function App() {
                 />
               </div>
               <button type="button" onClick={() => { setCarrinho([]); dispararToast('Carrinho limpo.', 'aviso'); }} className="flex items-center gap-2 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition ml-auto cursor-pointer shadow-2xs">
-                <Trash2 className="w-4 h-4" /> Limpar
+                <Trash2 className="w-4 h-4 text-rose-500" /> Limpar
               </button>
             </form>
 
@@ -1268,28 +1529,27 @@ export default function App() {
                 <span className="text-4xl font-black text-slate-900 tracking-tight">R$ {totalCarrinho.toFixed(2).replace('.', ',')}</span>
               </div>
               <div className="grid grid-cols-4 gap-3">
-                <button onClick={() => finalizarVenda('DINHEIRO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-emerald-600/20 transition-all cursor-pointer">
-                  <Banknote className="w-4 h-4" /> DINHEIRO
+                <button onClick={() => finalizarVenda('DINHEIRO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-emerald-600/25 transition-all cursor-pointer">
+                  <Banknote className="w-4 h-4 text-emerald-200" /> DINHEIRO
                 </button>
-                <button onClick={() => finalizarVenda('PIX')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-cyan-500/20 transition-all cursor-pointer">
-                  <QrCode className="w-4 h-4" /> PIX
+                <button onClick={() => finalizarVenda('PIX')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-600 hover:to-teal-700 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-cyan-500/25 transition-all cursor-pointer">
+                  <QrCode className="w-4 h-4 text-cyan-200" /> PIX
                 </button>
-                <button onClick={() => finalizarVenda('DÉBITO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-blue-600/20 transition-all cursor-pointer">
-                  <CreditCard className="w-4 h-4" /> DÉBITO
+                <button onClick={() => finalizarVenda('DÉBITO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-blue-600/25 transition-all cursor-pointer">
+                  <CreditCard className="w-4 h-4 text-blue-200" /> DÉBITO
                 </button>
-                <button onClick={() => finalizarVenda('CRÉDITO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-rose-600/20 transition-all cursor-pointer">
-                  <CreditCard className="w-4 h-4" /> CRÉDITO
+                <button onClick={() => finalizarVenda('CRÉDITO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-rose-600/25 transition-all cursor-pointer">
+                  <CreditCard className="w-4 h-4 text-rose-200" /> CRÉDITO
                 </button>
               </div>
             </div>
           </div>
         </main>
 
-        {/* RODAPÉ COMPACTO DE PONTA A PONTA (Letreiro rolante com pílulas coloridas de pagamento) */}
-        <footer className="absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 text-white h-9 flex items-center overflow-hidden z-10" style={{ paddingLeft: sidebarExpandida ? '250px' : '80px', transition: 'padding-left 0.3s ease-in-out' }}>
-          <div className="flex items-center gap-2 px-3 bg-slate-950 h-full border-r border-slate-800 shrink-0 z-20">
-            <Clock className="w-3.5 h-3.5 text-sky-400" />
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Últimas Vendas:</span>
+        <footer className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 text-slate-700 h-9 flex items-center overflow-hidden z-10 shadow-sm" style={{ paddingLeft: sidebarExpandida ? '250px' : '80px', transition: 'padding-left 0.3s ease-in-out' }}>
+          <div className="flex items-center gap-2 px-3 bg-slate-50 h-full border-r border-slate-200 shrink-0 z-20">
+            <Clock className="w-3.5 h-3.5 text-sky-600" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Últimas Vendas:</span>
           </div>
           <div className="flex-1 overflow-hidden relative flex items-center">
             <div className="flex animate-[marquee_25s_linear_infinite] whitespace-nowrap gap-3 items-center pl-4">
@@ -1300,18 +1560,18 @@ export default function App() {
                   else if (v.pagamento === 'CRÉDITO') badgeBg = "bg-rose-600";
                   else if (v.pagamento === 'DÉBITO') badgeBg = "bg-blue-600";
                   return (
-                    <div key={v.uuid || idx} className="flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-2.5 py-0.5 rounded-md text-xs">
+                    <div key={v.uuid || idx} className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-2.5 py-0.5 rounded-md text-xs shadow-2xs">
                       <span className={`px-1.5 py-0.5 rounded text-[8px] font-black text-white ${badgeBg}`}>
                         {v.pagamento}
                       </span>
-                      <span className="font-black text-emerald-400 text-xs">{v.valorFormatado}</span>
-                      <span className="text-slate-500">•</span>
-                      <span className="text-slate-300 text-[11px] font-semibold">{v.setor}</span>
+                      <span className="font-black text-emerald-600 text-xs">{v.valorFormatado}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="text-slate-600 text-[11px] font-semibold">{v.setor}</span>
                     </div>
                   );
                 })
               ) : (
-                <span className="text-xs text-slate-500 font-medium px-4">Nenhuma venda registrada nesta sessão.</span>
+                <span className="text-xs text-slate-400 font-medium px-4">Nenhuma venda registrada nesta sessão.</span>
               )}
             </div>
           </div>
@@ -1325,45 +1585,266 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+              className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-50 flex items-center justify-center p-4"
             >
               {modalAberto === 'abrir' && (
                 <motion.div 
-                  initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                  initial={{ scale: 0.95, opacity: 0, y: 15 }}
                   animate={{ scale: 1, opacity: 1, y: 0 }}
-                  exit={{ scale: 0.95, opacity: 0, y: 10 }}
-                  transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="bg-white border border-slate-200 p-8 rounded-3xl w-[400px] text-center shadow-2xl"
+                  exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                  transition={{ duration: 0.25, ease: "easeOut" }}
+                  className="bg-white border border-slate-100 p-8 rounded-3xl w-[420px] text-center shadow-2xl relative overflow-hidden"
                 >
-                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-2xs">
-                    <Key className="w-6 h-6" />
+                  <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-emerald-500 to-teal-500" />
+                  
+                  <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl mx-auto flex items-center justify-center mb-5 shadow-inner border border-emerald-100">
+                    <Key className="w-7 h-7" />
                   </div>
-                  <h3 className="text-xl font-black text-slate-800 mb-1">Abrir Caixa</h3>
-                  <p className="text-xs font-semibold text-slate-500 mb-6">Informe o valor do troco inicial:</p>
+                  
+                  <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-1">Abertura de Caixa</h3>
+                  <p className="text-xs font-semibold text-slate-500 mb-6">Confirme o valor do troco inicial disponível:</p>
                   
                   <form onSubmit={e => { e.preventDefault(); handleAbrirCaixa(); }}>
                     <div className="relative mb-6 flex items-center justify-center">
-                      <div className="w-full max-w-[240px] relative flex items-center">
+                      <div className="w-full max-w-[260px] relative flex items-center shadow-sm rounded-2xl bg-slate-50 border border-slate-300 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/20 transition">
                         <span className="absolute left-4 text-base font-black text-slate-400">R$</span>
                         <input 
                           ref={inputTrocoRef}
                           type="text" 
                           value={trocoInput} 
                           onChange={e => setTrocoInput(e.target.value)} 
-                          className="w-full pl-12 pr-4 py-3 border border-slate-300 bg-slate-50 rounded-xl text-center text-xl font-black text-slate-800 focus:outline-none focus:border-sky-500 shadow-2xs" 
+                          className="w-full pl-12 pr-4 py-3.5 bg-transparent text-center text-2xl font-black text-slate-800 focus:outline-none" 
                         />
                       </div>
                     </div>
 
                     {carregando ? (
-                      <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Abrindo caixa...</div>
+                      <div className="flex items-center justify-center gap-2 py-3.5 bg-emerald-50 text-emerald-700 rounded-2xl font-bold border border-emerald-100"><Loader2 className="w-5 h-5 animate-spin" /> Abrindo caixa...</div>
                     ) : (
                       <div className="flex gap-3">
-                        <button type="button" onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer transition">Cancelar</button>
-                        <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer transition">Abrir Caixa</button>
+                        <button type="button" onClick={() => setModalAberto(null)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-3.5 rounded-2xl font-black text-xs uppercase cursor-pointer transition">Cancelar</button>
+                        <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-2xl font-black text-xs uppercase shadow-lg shadow-emerald-600/25 cursor-pointer transition">Abrir Caixa</button>
                       </div>
                     )}
                   </form>
+                </motion.div>
+              )}
+
+              {modalAberto === 'calculadora' && (
+                <motion.div 
+                  initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="bg-white border border-slate-200 p-6 rounded-3xl w-[320px] shadow-2xl flex flex-col"
+                >
+                  <div className="flex items-center justify-between border-b pb-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="w-5 h-5 text-sky-600" />
+                      <h3 className="text-base font-black text-slate-900">Calculadora</h3>
+                    </div>
+                    <button onClick={() => setModalAberto(null)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-300 text-slate-900 font-mono text-2xl font-black p-4 rounded-2xl text-right mb-4 shadow-inner overflow-hidden truncate">
+                    {(() => {
+                      try {
+                        const parts = calcDisplay.split(/([+\-*/])/);
+                        const formatted = parts.map(part => {
+                          if (!isNaN(Number(part)) && part.trim() !== '') {
+                            const [intPart, decPart] = part.split('.');
+                            const formattedInt = Number(intPart).toLocaleString('pt-BR');
+                            return decPart !== undefined ? `${formattedInt},${decPart}` : formattedInt;
+                          }
+                          return part;
+                        }).join('');
+                        return formatted;
+                      } catch {
+                        return calcDisplay;
+                      }
+                    })()}
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-2 mb-4">
+                    {['C', '(', ')', '/', '7', '8', '9', '*', '4', '5', '6', '-', '1', '2', '3', '+', '0', '.', '='].map((btn) => (
+                      <button
+                        key={btn}
+                        type="button"
+                        onClick={() => {
+                          if (btn === 'C') {
+                            setCalcDisplay('0');
+                          } else if (btn === '=') {
+                            try {
+                              const resultado = Function('"use strict";return (' + calcDisplay.replace(/×/g, '*') + ')')();
+                              setCalcDisplay(String(resultado));
+                            } catch {
+                              setCalcDisplay('Erro');
+                            }
+                          } else {
+                            const valToAdd = btn === '.' ? '.' : btn;
+                            setCalcDisplay(prev => prev === '0' || prev === 'Erro' ? valToAdd : prev + valToAdd);
+                          }
+                        }}
+                        className={`py-3 rounded-xl font-bold text-sm transition cursor-pointer ${
+                          btn === '=' ? 'col-span-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md' :
+                          ['/', '*', '-', '+'].includes(btn) ? 'bg-sky-50 text-sky-600 hover:bg-sky-100 font-black' :
+                          btn === 'C' ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 font-black' :
+                          'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {btn}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button onClick={() => setModalAberto(null)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl font-bold text-xs uppercase cursor-pointer">Fechar</button>
+                </motion.div>
+              )}
+
+              {modalAberto === 'orcamento' && (
+                <motion.div 
+                  initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="bg-white border border-slate-200 p-8 rounded-3xl w-[700px] max-h-[90vh] flex flex-col shadow-2xl"
+                >
+                  <div className="flex items-center justify-between border-b pb-4 mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <FileSpreadsheet className="w-6 h-6 text-blue-600" />
+                      <h3 className="text-xl font-black text-slate-900">Gerar Orçamento</h3>
+                    </div>
+                    <button onClick={() => setModalAberto(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="col-span-1">
+                      <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wide">Nome do Cliente *</label>
+                      <input 
+                        type="text" 
+                        value={nomeClienteOrcamento}
+                        onChange={e => setNomeClienteOrcamento(e.target.value)}
+                        placeholder="Nome completo ou Empresa..."
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wide">CPF / CNPJ (Opcional)</label>
+                      <input 
+                        type="text" 
+                        value={docClienteOrcamento}
+                        onChange={e => setDocClienteOrcamento(e.target.value)}
+                        placeholder="000.000.000-00 ou 00.000..."
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="text-xs font-bold text-slate-700 block mb-1 uppercase tracking-wide">Desconto (%)</label>
+                      <input 
+                        type="text" 
+                        value={descontoPercentual}
+                        onChange={e => setDescontoPercentual(e.target.value)}
+                        placeholder="Ex: 10 ou 5.5"
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto max-h-[40vh] space-y-3 mb-4 pr-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase text-slate-400">Itens do Orçamento</span>
+                      <button 
+                        onClick={adicionarItemOrcamento}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg font-bold text-xs transition cursor-pointer"
+                      >
+                        <Plus className="w-4 h-4" /> Adicionar Item
+                      </button>
+                    </div>
+
+                    {itensOrcamento.map((item, index) => {
+                      const isUltimo = index === itensOrcamento.length - 1;
+                      return (
+                        <div key={index} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+                          <div className="col-span-6">
+                            <input 
+                              ref={isUltimo ? ultimoItemRef : null}
+                              type="text"
+                              value={item.descricao}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setItensOrcamento(prev => prev.map((it, i) => i === index ? { ...it, descricao: val } : it));
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  adicionarItemOrcamento();
+                                }
+                              }}
+                              placeholder="Descrição do serviço/produto"
+                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input 
+                              type="number"
+                              min={1}
+                              value={item.qtd}
+                              onChange={e => {
+                                const val = parseInt(e.target.value) || 1;
+                                setItensOrcamento(prev => prev.map((it, i) => i === index ? { ...it, qtd: val } : it));
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  adicionarItemOrcamento();
+                                }
+                              }}
+                              placeholder="Qtd"
+                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-center text-slate-800 focus:outline-none"
+                            />
+                          </div>
+                          <div className="col-span-3">
+                            <input 
+                              type="number"
+                              step="0.01"
+                              value={item.valorUnit}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value) || 0;
+                                setItensOrcamento(prev => prev.map((it, i) => i === index ? { ...it, valorUnit: val } : it));
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  adicionarItemOrcamento();
+                                }
+                              }}
+                              placeholder="V. Unit (R$)"
+                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
+                            />
+                          </div>
+                          <div className="col-span-1 flex justify-center">
+                            {itensOrcamento.length > 1 && (
+                              <button 
+                                onClick={() => setItensOrcamento(prev => prev.filter((_, i) => i !== index))}
+                                className="text-rose-500 hover:bg-rose-50 p-1.5 rounded-lg transition cursor-pointer"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex gap-3 pt-4 border-t border-slate-200">
+                    <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3.5 rounded-xl font-extrabold text-xs uppercase transition cursor-pointer">Cancelar</button>
+                    <button onClick={gerarPdfOrcamento} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer transition">Gerar PDF do Orçamento</button>
+                  </div>
                 </motion.div>
               )}
 
@@ -1379,7 +1860,7 @@ export default function App() {
                     <Lock className="w-6 h-6" />
                   </div>
                   <h3 className="text-xl font-black text-slate-800 mb-1">Fechar Caixa</h3>
-                  <p className="text-xs font-semibold text-slate-500 mb-6">Deseja fechar o caixa e guardar os relatórios nas pastas de Resumo e Vendas?</p>
+                  <p className="text-xs font-semibold text-slate-500 mb-6">Deseja fechar o caixa e guardar os relatórios?</p>
                   {carregando ? (
                     <div className="flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> A guardar relatórios...</div>
                   ) : (
