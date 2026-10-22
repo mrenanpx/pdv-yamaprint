@@ -3,7 +3,8 @@ import {
   Scissors, Copy, Printer, Shield, BookOpen, Stamp, 
   Palette, Monitor, Package, CalendarCheck, PiggyBank,
   UserCheck, List, Key, Lock, Trash2, 
-  X, CheckCircle2, Clock, ArrowRight, LogOut, Search, Loader2, AlertCircle, Eye, EyeOff, FolderOpen,  TrendingUp, DollarSign, Receipt, PieChart, Users, ChevronLeft, ChevronRight
+  X, CheckCircle2, Clock, ArrowRight, LogOut, Search, Loader2, AlertCircle, Eye, EyeOff, FolderOpen,  TrendingUp, DollarSign, Receipt, PieChart, Users, ChevronLeft, ChevronRight, FileText, Download, Calendar,
+  Banknote, QrCode, CreditCard
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,11 +27,6 @@ const SETORES = [
   { id: 'RETIRADA', label: 'RETIRADA', icon: PiggyBank, shortcut: 'F12', reqObs: true, isDanger: true },
 ];
 
-const LINKS_DRIVE: Record<string, string> = {
-  "MOGI": "https://drive.google.com/drive/folders/1_nXpre0UBFsiDTRNRh9nqVfgXWv9bQs0?usp=drive_link",
-  "SUZANO": "https://drive.google.com/drive/folders/1YAwCBmHhPcVmprpFzSdE9C1f0C7bmZCe?usp=drive_link"
-};
-
 const USUARIOS_CONFIG: Record<string, { unidade: string; email: string }> = {
   "loja-MOGI": { unidade: "MOGI", email: "mogi@yamaprint.local" },
   "loja-SUZANO": { unidade: "SUZANO", email: "suzano@yamaprint.local" }
@@ -38,6 +34,12 @@ const USUARIOS_CONFIG: Record<string, { unidade: string; email: string }> = {
 
 const formatarMoedaPtBr = (valor: number) => {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const formatarDataParaPadrao = (dataIso: string) => {
+  if (!dataIso) return '';
+  const [ano, mes, dia] = dataIso.split('-');
+  return `${dia}_${mes}_${ano.slice(2)}`;
 };
 
 export default function App() {
@@ -69,12 +71,25 @@ export default function App() {
   const [erroLoginMsg, setErroLoginMsg] = useState<string | null>(null);
 
   const [sidebarExpandida, setSidebarExpandida] = useState(true);
-  const [toast, setToast] = useState<{ mensagem: string; tipo: 'sucesso' | 'erro' | 'aviso' | 'retirada' | 'neutro' } | null>(null);
+  
+  const [toasts, setToasts] = useState<Array<{ id: number; mensagem: string; tipo: 'sucesso' | 'erro' | 'aviso' | 'retirada' | 'neutro' }>>([]);
+  const contadorToastRef = useRef(0);
 
   const dispararToast = (mensagem: string, tipo: 'sucesso' | 'erro' | 'aviso' | 'retirada' | 'neutro' = 'sucesso') => {
-    setToast({ mensagem, tipo });
-    setTimeout(() => { setToast(null); }, 3000);
+    const id = ++contadorToastRef.current;
+    setToasts(prev => [...prev, { id, mensagem, tipo }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3500);
   };
+
+  const [dataSelecionadaResumo, setDataSelecionadaResumo] = useState<string>(() => {
+    return new Date().toISOString().split('T')[0];
+  });
+  const [verificandoArquivo, setVerificandoArquivo] = useState(false);
+  const [arquivoEncontrado, setArquivoEncontrado] = useState<string | null>(null);
+
+  const [linkResumoRecente, setLinkResumoRecente] = useState<{ url: string; nome: string } | null>(null);
 
   const [pendenteRetirada, setPendenteRetirada] = useState<{ valor: number; qtd: number } | null>(null);
   const [obsRetiradaInput, setObsRetiradaInput] = useState<string>('');
@@ -99,6 +114,16 @@ export default function App() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
+          const ultimoLoginData = localStorage.getItem('yama_ultimo_login_data');
+          const dataHoje = new Date().toISOString().split('T')[0];
+
+          if (ultimoLoginData && ultimoLoginData !== dataHoje) {
+            await supabase.auth.signOut();
+            localStorage.removeItem('yama_ultimo_login_data');
+            setLogado(false);
+            return;
+          }
+
           setLogado(true);
           await carregarStatus(unidade);
         }
@@ -166,6 +191,59 @@ export default function App() {
     }
   }, [modalAberto]);
 
+  useEffect(() => {
+    if (modalAberto === 'registros_storage' && dataSelecionadaResumo) {
+      verificarResumoData(dataSelecionadaResumo);
+    }
+  }, [dataSelecionadaResumo, modalAberto, unidade]);
+
+  const verificarResumoData = async (dataIso: string) => {
+    setVerificandoArquivo(true);
+    setArquivoEncontrado(null);
+    try {
+      const dataFormatada = formatarDataParaPadrao(dataIso);
+      const nomeEsperado = `${dataFormatada}.pdf`;
+
+      const { data, error } = await supabase.storage
+        .from('relatorios')
+        .list(`${unidade.toLowerCase()}/resumo`, {
+          search: nomeEsperado
+        });
+
+      if (!error && data && data.length > 0) {
+        setArquivoEncontrado(nomeEsperado);
+      }
+    } catch (err) {
+      console.error("Erro ao verificar arquivo:", err);
+    } finally {
+      setVerificandoArquivo(false);
+    }
+  };
+
+  const baixarResumoPorData = async () => {
+    if (!arquivoEncontrado) return;
+    try {
+      const caminhoCompleto = `${unidade.toLowerCase()}/resumo/${arquivoEncontrado}`;
+      const { data, error } = await supabase.storage
+        .from('relatorios')
+        .download(caminhoCompleto);
+
+      if (error) throw error;
+
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = arquivoEncontrado;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Erro ao baixar PDF:', error);
+      alert('Não foi possível efetuar o download do arquivo.');
+    }
+  };
+
   const lidarComMudancaPreco = (valorStr: string) => {
     if (valorStr.includes(',')) {
       setPrecoInput(valorStr);
@@ -205,6 +283,9 @@ export default function App() {
         return;
       }
 
+      const dataHoje = new Date().toISOString().split('T')[0];
+      localStorage.setItem('yama_ultimo_login_data', dataHoje);
+
       setUnidade(config.unidade);
       setLogado(true);
       await carregarStatus(config.unidade);
@@ -216,6 +297,7 @@ export default function App() {
 
   const fazerLogout = () => {
     supabase.auth.signOut();
+    localStorage.removeItem('yama_ultimo_login_data');
     setLogado(false);
     setSenha('');
     setCarrinho([]);
@@ -339,11 +421,6 @@ export default function App() {
     }
   };
 
-  const abrirPastaRegistros = () => {
-    const link = LINKS_DRIVE[unidade] || "https://drive.google.com";
-    window.open(link, '_blank');
-  };
-
   const selecionarSetorDinamico = (idSetor: string) => {
     if (statusCaixa.status !== 'Aberto') {
       setModalAberto('aviso_caixa_fechado');
@@ -390,26 +467,30 @@ export default function App() {
         return;
       }
 
-      const dataCaixa = statusCaixa.dataAberturaISO || new Date().toISOString().slice(0, 10);
+      const dataCaixaIso = statusCaixa.dataAberturaISO || new Date().toISOString().slice(0, 10);
+      const dataCaixaFormatada = formatarDataParaPadrao(dataCaixaIso); // dd_mm_aa
       const unidadeLower = unidade.toLowerCase();
 
       // ==========================================
-      // 1. GERAR E GUARDAR PDF DE RESUMO COM 3 TABELAS
+      // 1. GERAR E GUARDAR PDF DE RESUMO (dd_mm_aa.pdf)
       // ==========================================
       const docResumo = new jsPDF();
+      
       docResumo.setFont("Helvetica", "bold");
-      docResumo.setFontSize(14);
-      docResumo.text(`RELATÓRIO DE FECHAMENTO DE CAIXA`, 14, 18);
-      docResumo.text(`UNIDADE ${unidade}`, 14, 25);
+      docResumo.setFontSize(13);
+      docResumo.text(`RELATÓRIO DE FECHAMENTO DE CAIXA — UNIDADE `, 14, 18);
+      const larguraTextoBase = docResumo.getTextWidth(`RELATÓRIO DE FECHAMENTO DE CAIXA — UNIDADE `);
+      docResumo.setTextColor(225, 29, 72);
+      docResumo.text(`${unidade}`, 14 + larguraTextoBase, 18);
 
+      docResumo.setTextColor(15, 23, 42);
       docResumo.setFont("Helvetica", "normal");
       docResumo.setFontSize(10);
-      const dataEmissaoStr = new Date().toLocaleString();
-      docResumo.text(`Data de Emissão: ${dataEmissaoStr} | Clientes Atendidos: ${statusCaixa.totais.totalClientesUnicos}`, 14, 32);
+      docResumo.text(`DATA DA ABERTURA: ${dataCaixaIso.split('-').reverse().join('/')}   |   Clientes Atendidos: ${statusCaixa.totais.totalClientesUnicos}`, 14, 27);
 
       // Tabela 1: Setores
       docResumo.setFont("Helvetica", "bold");
-      docResumo.text("1. Faturamento Detalhado por Setor", 14, 42);
+      docResumo.text("1. Faturamento Detalhado por Setor", 14, 38);
 
       const dadosSetorPdf = Object.entries(statusCaixa.totais.porSetor || {}).map(([setor, valor]) => [
         setor,
@@ -417,7 +498,7 @@ export default function App() {
       ]);
 
       autoTable(docResumo, {
-        startY: 46,
+        startY: 42,
         head: [['SETOR', 'FATURAMENTO']],
         body: dadosSetorPdf,
         theme: 'grid',
@@ -488,10 +569,10 @@ export default function App() {
           if (data.section === 'body') {
             const label = data.row.raw[0];
             if (label === 'Faturamento Total') {
-              data.cell.styles.textColor = [14, 116, 144]; // Azul escuro
+              data.cell.styles.textColor = [14, 116, 144];
               data.cell.styles.fontStyle = 'bold';
             } else if (label === 'Saldo em Caixa') {
-              data.cell.styles.textColor = [5, 150, 105]; // Verde escuro
+              data.cell.styles.textColor = [5, 150, 105];
               data.cell.styles.fontStyle = 'bold';
             }
           }
@@ -499,14 +580,15 @@ export default function App() {
       });
 
       const blobResumo = docResumo.output('blob');
-      const caminhoResumo = `${unidadeLower}/resumo/${dataCaixa}-R.pdf`;
+      const nomeResumo = `${dataCaixaFormatada}.pdf`;
+      const caminhoResumo = `${unidadeLower}/resumo/${nomeResumo}`;
 
       await supabase.storage
         .from('relatorios')
         .upload(caminhoResumo, blobResumo, { contentType: 'application/pdf', upsert: true });
 
       // ==========================================
-      // 2. GERAR E GUARDAR PDF DE VENDAS DETALHADAS
+      // 2. GERAR E GUARDAR PDF DE VENDAS DETALHADAS (dd_mm_aa-V.pdf)
       // ==========================================
       const docVendas = new jsPDF();
       docVendas.setFont("Helvetica", "bold");
@@ -515,7 +597,7 @@ export default function App() {
 
       docVendas.setFont("Helvetica", "normal");
       docVendas.setFontSize(10);
-      docVendas.text(`Data de Abertura: ${dataCaixa}`, 14, 28);
+      docVendas.text(`Data de Abertura: ${dataCaixaIso}`, 14, 28);
 
       const linhasVendasPdf = (statusCaixa.vendas || []).map((v: any) => [
         `#${v.id}`,
@@ -552,7 +634,8 @@ export default function App() {
       });
 
       const blobVendas = docVendas.output('blob');
-      const caminhoVendas = `${unidadeLower}/vendas/${dataCaixa}-V.pdf`;
+      const nomeVendas = `${dataCaixaFormatada}-V.pdf`;
+      const caminhoVendas = `${unidadeLower}/vendas/${nomeVendas}`;
 
       await supabase.storage
         .from('relatorios')
@@ -568,10 +651,16 @@ export default function App() {
 
       if (error) throw error;
 
-      setMensagemSucesso("Caixa fechado com sucesso!\nOs relatórios foram guardados com sucesso como (data)-R.pdf e (data)-V.pdf nas respetivas pastas.");
+      const urlResumo = URL.createObjectURL(blobResumo);
+      setLinkResumoRecente({
+        url: urlResumo,
+        nome: nomeResumo
+      });
+
+      setMensagemSucesso(`Caixa fechado com sucesso!\nO relatório de resumo foi guardado como ${nomeResumo} na respetiva pasta.`);
       setModalAberto('sucesso_fechamento');
       await carregarStatus();
-      dispararToast('Caixa fechado e relatórios guardados!', 'sucesso');
+      dispararToast('Caixa fechado e relatório guardado!', 'sucesso');
     } catch (err: any) {
       console.error("Erro ao fechar caixa:", err);
       alert('Erro ao fechar caixa: ' + (err.message || 'Erro desconhecido'));
@@ -845,6 +934,33 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-100 text-slate-800 select-none overflow-hidden font-sans">
       
+      {/* TOASTS INSTANTÂNEOS EM PILHA */}
+      <div className="fixed top-5 right-5 z-50 flex flex-col gap-2.5 pointer-events-none max-w-sm w-full">
+        <AnimatePresence>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              layout
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.1 } }}
+              transition={{ type: "spring", stiffness: 600, damping: 35 }}
+              className="pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border text-white font-black text-xs uppercase tracking-wider backdrop-blur-md"
+              style={{
+                background: t.tipo === 'sucesso' ? 'rgba(5, 150, 105, 0.95)' : t.tipo === 'retirada' || t.tipo === 'erro' ? 'rgba(225, 29, 72, 0.95)' : t.tipo === 'neutro' ? 'rgba(15, 23, 42, 0.95)' : 'rgba(217, 119, 6, 0.95)',
+                borderColor: 'rgba(255,255,255,0.3)'
+              }}
+            >
+              {t.tipo === 'sucesso' && <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />}
+              {(t.tipo === 'retirada' || t.tipo === 'erro') && <AlertCircle className="w-4 h-4 text-rose-200 shrink-0" />}
+              {t.tipo === 'aviso' && <AlertCircle className="w-4 h-4 text-amber-200 shrink-0" />}
+              {t.tipo === 'neutro' && <CheckCircle2 className="w-4 h-4 text-sky-300 shrink-0" />}
+              <span className="truncate">{t.mensagem}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       <motion.aside 
         animate={{ width: sidebarExpandida ? 250 : 80 }}
         transition={{ duration: 0.3, ease: "easeInOut" }}
@@ -938,7 +1054,7 @@ export default function App() {
 
           <div className="relative group/tip">
             <button 
-              onClick={abrirPastaRegistros} 
+              onClick={() => setModalAberto('registros_storage')} 
               className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-white/10 text-slate-200 hover:text-white font-bold text-xs transition cursor-pointer"
             >
               <FolderOpen className="w-5 h-5 text-sky-300 shrink-0" />
@@ -979,7 +1095,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Bloco Inferior: Botão Sair do Sistema e Recolher */}
         <div className="p-3 border-t border-white/10 flex flex-col gap-2 bg-black/20">
           <div className="relative group/tip">
             <button 
@@ -1015,12 +1130,12 @@ export default function App() {
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         
-        <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shadow-xs z-10 h-18">
+        <header className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200/90 shadow-2xs z-10 h-18">
           <div className="flex items-center gap-6 text-xs font-medium">
             <div className="flex items-center gap-2.5">
               <span className="text-slate-400 font-bold">STATUS:</span>
               <div className="flex items-center gap-2">
-                <span className={`font-extrabold px-2.5 py-1 rounded-full ${caixaAberto ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
+                <span className={`font-extrabold px-2.5 py-1 rounded-full shadow-2xs ${caixaAberto ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
                   {statusCaixa.status.toUpperCase()}
                 </span>
                 <span className="relative flex h-3 w-3">
@@ -1038,16 +1153,19 @@ export default function App() {
             
             <div className="flex items-center gap-2">
               <span className="text-slate-400 font-bold">OPERAÇÃO:</span>
-              <span className={`font-extrabold px-3 py-1 rounded-full border ${statusCaixa.caixa2Ativo ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-purple-100 text-purple-700 border-purple-200'}`}>
+              <span className={`font-extrabold px-3 py-1 rounded-full border shadow-2xs ${statusCaixa.caixa2Ativo ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-purple-100 text-purple-700 border-purple-200'}`}>
                 {statusCaixa.caixa2Ativo ? 'ALMOÇO' : 'CAIXA PRINCIPAL'}
               </span>
             </div>
           </div>
         </header>
 
-        <main className="flex flex-1 gap-5 p-5 overflow-hidden">
-          <div className="w-2/5 flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-3.5 flex-1">
+        {/* MAIN COM SETORES AMPLIADOS E SEM O BLOCO DE ÚLTIMAS ENTRADAS */}
+        <main className="flex flex-1 gap-6 p-6 overflow-hidden items-stretch pb-12">
+          
+          {/* COLUNA ESQUERDA (Setores otimizados verticalmente) */}
+          <div className="w-[42%] flex flex-col h-full">
+            <div className="grid grid-cols-2 gap-3 flex-1 min-h-0 content-stretch">
               {SETORES.map((s) => {
                 const Icon = s.icon;
                 const ativo = setorAtivo === s.id;
@@ -1055,85 +1173,34 @@ export default function App() {
                   <button
                     key={s.id}
                     onClick={() => selecionarSetorDinamico(s.id)}
-                    className={`group relative flex flex-col items-center justify-center p-3.5 rounded-2xl border text-xs font-extrabold transition-all cursor-pointer shadow-xs active:scale-95 ${
+                    className={`group relative flex items-center px-4 py-3 rounded-2xl border text-xs font-extrabold transition-all cursor-pointer shadow-sm hover:shadow-md active:scale-95 ${
                       ativo 
-                        ? (s.isDanger ? 'bg-rose-600 text-white border-rose-600 ring-4 ring-rose-600/20' : 'bg-gradient-to-b from-blue-900 to-blue-950 text-white border-blue-900 ring-4 ring-blue-900/20') 
-                        : (s.isDanger ? 'bg-white text-slate-700 border-rose-200 hover:bg-rose-50' : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50/50')
+                        ? (s.isDanger ? 'bg-rose-600 text-white border-rose-600 ring-4 ring-rose-600/20 shadow-rose-500/30' : 'bg-gradient-to-b from-blue-900 to-blue-950 text-white border-blue-900 ring-4 ring-blue-900/20 shadow-blue-900/30') 
+                        : (s.isDanger ? 'bg-white text-slate-700 border-rose-200 hover:bg-rose-50/80' : 'bg-white text-slate-700 border-slate-200/90 hover:bg-blue-50/50')
                     }`}
                   >
-                    <span className={`absolute top-2.5 right-3 text-[10px] font-black px-1.5 py-0.5 rounded-md ${ativo ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{s.shortcut}</span>
-                    <div className={`p-2 rounded-xl mb-1.5 ${ativo ? 'bg-white/20 text-white' : s.isDanger ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-blue-900'}`}>
+                    <span className={`absolute top-2 right-2.5 text-[9px] font-black px-1.5 py-0.5 rounded-md ${ativo ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>{s.shortcut}</span>
+                    <div className={`p-2.5 rounded-xl mr-3 shrink-0 transition-transform group-hover:scale-105 ${ativo ? 'bg-white/20 text-white' : s.isDanger ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-blue-900'}`}>
                       <Icon className="w-5 h-5" />
                     </div>
-                    <span className="tracking-tight text-center">{s.label}</span>
+                    <span className="tracking-tight text-left text-xs font-black truncate">{s.label}</span>
                   </button>
                 );
               })}
             </div>
-
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 h-48 flex flex-col shadow-xs">
-              <div className="flex items-center gap-2 text-[11px] font-black text-slate-500 uppercase tracking-widest pb-2.5 mb-2.5 border-b border-slate-100">
-                <Clock className="w-3.5 h-3.5 text-sky-500" /> Últimas Entradas
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 flex-1 items-start content-start overflow-y-auto pr-1">
-                {statusCaixa.vendas && statusCaixa.vendas.length > 0 ? (
-                  statusCaixa.vendas.slice(0, 6).map((v: any) => {
-                    let corFundo = "bg-cyan-500";
-                    if (v.pagamento === 'DINHEIRO') corFundo = "bg-emerald-600";
-                    else if (v.pagamento === 'CRÉDITO') corFundo = "bg-rose-600";
-                    else if (v.pagamento === 'DÉBITO') corFundo = "bg-blue-600";
-                    else if (v.pagamento === 'CANCELADO') corFundo = "bg-slate-400";
-                    return (
-                      <div key={v.uuid} className={`grid grid-cols-4 items-center px-3 py-2 border rounded-xl text-xs shadow-2xs w-full gap-1 ${v.setor === 'RETIRADA' ? 'bg-rose-50/70 border-rose-200' : 'bg-slate-50 border-slate-200/80'}`}>
-                        <span className={`font-extrabold truncate ${v.setor === 'RETIRADA' ? 'text-rose-700' : 'text-slate-500'}`}>#{v.id}</span>
-                        <span className={`font-black truncate ${v.setor === 'RETIRADA' ? 'text-rose-700' : 'text-slate-800'}`}>{v.valorFormatado}</span>
-                        <span className="font-bold text-[10px] text-slate-600 truncate">{v.setor}</span>
-                        <div className="flex justify-end">
-                          <span className={`text-[9px] font-black text-white px-1.5 py-0.5 rounded-md truncate ${corFundo}`}>{v.pagamento}</span>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="col-span-2 text-center text-slate-400 text-xs pt-6 font-medium">Nenhuma entrada recente.</div>
-                )}
-              </div>
-            </div>
           </div>
 
-          <div className="w-3/5 flex flex-col gap-4">
+          {/* COLUNA DIREITA (Registro, Carrinho, Pagamentos com Ícones em Cima) */}
+          <div className="w-[58%] flex flex-col gap-5 h-full">
             
-            <div className="bg-white border border-slate-200 rounded-2xl px-6 py-4 flex items-center justify-between shadow-xs relative overflow-hidden">
+            <div className="bg-white border border-slate-200/90 rounded-2xl px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
               <div>
                 <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block mb-0.5">Item em Registro</span>
                 <span className="text-base font-black text-blue-950 tracking-wide">{setorAtivo || 'Nenhum selecionado'}</span>
               </div>
-
-              <div className="absolute right-6 top-1/2 -translate-y-1/2 z-20">
-                <AnimatePresence>
-                  {toast && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.9, x: 10 }}
-                      animate={{ opacity: 1, scale: 1, x: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, x: 10 }}
-                      className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg border text-white font-black text-xs uppercase tracking-wider"
-                      style={{
-                        background: toast.tipo === 'sucesso' ? '#059669' : toast.tipo === 'retirada' || toast.tipo === 'erro' ? '#e11d48' : toast.tipo === 'neutro' ? '#0f172a' : '#d97706',
-                        borderColor: 'rgba(255,255,255,0.3)'
-                      }}
-                    >
-                      {toast.tipo === 'sucesso' && <CheckCircle2 className="w-4 h-4 text-emerald-200" />}
-                      {(toast.tipo === 'retirada' || toast.tipo === 'erro') && <AlertCircle className="w-4 h-4 text-rose-200" />}
-                      {toast.tipo === 'aviso' && <AlertCircle className="w-4 h-4 text-amber-200" />}
-                      {toast.tipo === 'neutro' && <CheckCircle2 className="w-4 h-4 text-sky-300" />}
-                      <span>{toast.mensagem}</span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
             </div>
 
-            <form onSubmit={adicionarAoCarrinho} className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center gap-3 shadow-xs">
+            <form onSubmit={adicionarAoCarrinho} className="bg-white border border-slate-200/90 rounded-2xl p-4 flex flex-wrap items-center gap-3 shadow-sm shrink-0">
               <div className="flex items-center gap-2.5">
                 <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Preço Unit. (R$):</label>
                 <input
@@ -1147,7 +1214,7 @@ export default function App() {
                       adicionarAoCarrinho();
                     }
                   }}
-                  className="w-36 px-3.5 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-base font-black text-slate-800 focus:outline-none focus:border-blue-900"
+                  className="w-36 px-3.5 py-2.5 border border-slate-300 bg-slate-50/80 rounded-xl text-base font-black text-slate-800 focus:outline-none focus:border-blue-900 shadow-2xs"
                 />
               </div>
               <div className="flex items-center gap-2.5">
@@ -1163,15 +1230,15 @@ export default function App() {
                       adicionarAoCarrinho();
                     }
                   }}
-                  className="w-20 px-3.5 py-2.5 border border-slate-300 bg-slate-50 rounded-xl text-base font-black text-center text-slate-800 focus:outline-none"
+                  className="w-20 px-3.5 py-2.5 border border-slate-300 bg-slate-50/80 rounded-xl text-base font-black text-center text-slate-800 focus:outline-none shadow-2xs"
                 />
               </div>
-              <button type="button" onClick={() => { setCarrinho([]); dispararToast('Carrinho limpo.', 'aviso'); }} className="flex items-center gap-2 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition ml-auto cursor-pointer">
+              <button type="button" onClick={() => { setCarrinho([]); dispararToast('Carrinho limpo.', 'aviso'); }} className="flex items-center gap-2 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl transition ml-auto cursor-pointer shadow-2xs">
                 <Trash2 className="w-4 h-4" /> Limpar
               </button>
             </form>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 flex-1 flex flex-col overflow-hidden shadow-xs">
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 flex-1 flex flex-col overflow-hidden shadow-sm min-h-0">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2.5 block">Itens da Venda Atual</span>
               <ul className="flex-1 overflow-y-auto divide-y divide-slate-100 pr-1">
                 {carrinho.length === 0 ? (
@@ -1195,21 +1262,62 @@ export default function App() {
               </ul>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-6 py-3.5 mb-4 flex items-center justify-between">
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm shrink-0">
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-6 py-3.5 mb-4 flex items-center justify-between shadow-2xs">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Total a Pagar</span>
                 <span className="text-4xl font-black text-slate-900 tracking-tight">R$ {totalCarrinho.toFixed(2).replace('.', ',')}</span>
               </div>
               <div className="grid grid-cols-4 gap-3">
-                <button onClick={() => finalizarVenda('DINHEIRO')} className="py-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm uppercase tracking-wider shadow-md cursor-pointer">DINHEIRO</button>
-                <button onClick={() => finalizarVenda('PIX')} className="py-4 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-black text-sm uppercase tracking-wider shadow-md cursor-pointer">PIX</button>
-                <button onClick={() => finalizarVenda('DÉBITO')} className="py-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm uppercase tracking-wider shadow-md cursor-pointer">DÉBITO</button>
-                <button onClick={() => finalizarVenda('CRÉDITO')} className="py-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm uppercase tracking-wider shadow-md cursor-pointer">CRÉDITO</button>
+                <button onClick={() => finalizarVenda('DINHEIRO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-emerald-600/20 transition-all cursor-pointer">
+                  <Banknote className="w-4 h-4" /> DINHEIRO
+                </button>
+                <button onClick={() => finalizarVenda('PIX')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-cyan-500/20 transition-all cursor-pointer">
+                  <QrCode className="w-4 h-4" /> PIX
+                </button>
+                <button onClick={() => finalizarVenda('DÉBITO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-blue-600/20 transition-all cursor-pointer">
+                  <CreditCard className="w-4 h-4" /> DÉBITO
+                </button>
+                <button onClick={() => finalizarVenda('CRÉDITO')} className="py-3 flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-black text-xs uppercase tracking-wider shadow-md shadow-rose-600/20 transition-all cursor-pointer">
+                  <CreditCard className="w-4 h-4" /> CRÉDITO
+                </button>
               </div>
             </div>
           </div>
         </main>
 
+        {/* RODAPÉ COMPACTO DE PONTA A PONTA (Letreiro rolante com pílulas coloridas de pagamento) */}
+        <footer className="absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 text-white h-9 flex items-center overflow-hidden z-10" style={{ paddingLeft: sidebarExpandida ? '250px' : '80px', transition: 'padding-left 0.3s ease-in-out' }}>
+          <div className="flex items-center gap-2 px-3 bg-slate-950 h-full border-r border-slate-800 shrink-0 z-20">
+            <Clock className="w-3.5 h-3.5 text-sky-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Últimas Vendas:</span>
+          </div>
+          <div className="flex-1 overflow-hidden relative flex items-center">
+            <div className="flex animate-[marquee_25s_linear_infinite] whitespace-nowrap gap-3 items-center pl-4">
+              {statusCaixa.vendas && statusCaixa.vendas.length > 0 ? (
+                statusCaixa.vendas.filter((v:any) => v.pagamento !== 'CANCELADO').map((v: any, idx: number) => {
+                  let badgeBg = "bg-cyan-600";
+                  if (v.pagamento === 'DINHEIRO') badgeBg = "bg-emerald-600";
+                  else if (v.pagamento === 'CRÉDITO') badgeBg = "bg-rose-600";
+                  else if (v.pagamento === 'DÉBITO') badgeBg = "bg-blue-600";
+                  return (
+                    <div key={v.uuid || idx} className="flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-2.5 py-0.5 rounded-md text-xs">
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-black text-white ${badgeBg}`}>
+                        {v.pagamento}
+                      </span>
+                      <span className="font-black text-emerald-400 text-xs">{v.valorFormatado}</span>
+                      <span className="text-slate-500">•</span>
+                      <span className="text-slate-300 text-[11px] font-semibold">{v.setor}</span>
+                    </div>
+                  );
+                })
+              ) : (
+                <span className="text-xs text-slate-500 font-medium px-4">Nenhuma venda registrada nesta sessão.</span>
+              )}
+            </div>
+          </div>
+        </footer>
+
+        {/* MODAIS */}
         <AnimatePresence>
           {modalAberto && (
             <motion.div 
@@ -1227,30 +1335,32 @@ export default function App() {
                   transition={{ duration: 0.2, ease: "easeOut" }}
                   className="bg-white border border-slate-200 p-8 rounded-3xl w-[400px] text-center shadow-2xl"
                 >
-                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl mx-auto flex items-center justify-center mb-4">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-2xs">
                     <Key className="w-6 h-6" />
                   </div>
                   <h3 className="text-xl font-black text-slate-800 mb-1">Abrir Caixa</h3>
                   <p className="text-xs font-semibold text-slate-500 mb-6">Informe o valor do troco inicial:</p>
                   
                   <form onSubmit={e => { e.preventDefault(); handleAbrirCaixa(); }}>
-                    <div className="relative mb-6">
-                      <span className="absolute left-4 top-3.5 text-base font-black text-slate-400">R$</span>
-                      <input 
-                        ref={inputTrocoRef}
-                        type="text" 
-                        value={trocoInput} 
-                        onChange={e => setTrocoInput(e.target.value)} 
-                        className="w-full pl-12 pr-4 py-3 border border-slate-300 bg-slate-50 rounded-xl text-center text-xl font-black text-slate-800 focus:outline-none" 
-                      />
+                    <div className="relative mb-6 flex items-center justify-center">
+                      <div className="w-full max-w-[240px] relative flex items-center">
+                        <span className="absolute left-4 text-base font-black text-slate-400">R$</span>
+                        <input 
+                          ref={inputTrocoRef}
+                          type="text" 
+                          value={trocoInput} 
+                          onChange={e => setTrocoInput(e.target.value)} 
+                          className="w-full pl-12 pr-4 py-3 border border-slate-300 bg-slate-50 rounded-xl text-center text-xl font-black text-slate-800 focus:outline-none focus:border-sky-500 shadow-2xs" 
+                        />
+                      </div>
                     </div>
 
                     {carregando ? (
                       <div className="flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Abrindo caixa...</div>
                     ) : (
                       <div className="flex gap-3">
-                        <button type="button" onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer">Cancelar</button>
-                        <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer">Abrir Caixa</button>
+                        <button type="button" onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer transition">Cancelar</button>
+                        <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer transition">Abrir Caixa</button>
                       </div>
                     )}
                   </form>
@@ -1274,10 +1384,73 @@ export default function App() {
                     <div className="flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> A guardar relatórios...</div>
                   ) : (
                     <div className="flex gap-3">
-                      <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer">Não</button>
-                      <button onClick={handleFecharCaixa} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer">Sim, Fechar</button>
+                      <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer transition">Não</button>
+                      <button onClick={handleFecharCaixa} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer transition">Sim, Fechar</button>
                     </div>
                   )}
+                </motion.div>
+              )}
+
+              {modalAberto === 'registros_storage' && (
+                <motion.div 
+                  initial={{ scale: 0.95, opacity: 0, y: 10 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.95, opacity: 0, y: 10 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className="bg-white border border-slate-200 p-8 rounded-3xl w-[460px] flex flex-col shadow-2xl"
+                >
+                  <div className="flex items-center justify-between border-b pb-4 mb-5">
+                    <div className="flex items-center gap-2.5">
+                      <Calendar className="w-6 h-6 text-sky-600" />
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 tracking-tight">Consultar Resumos</h3>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Unidade: {unidade}</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setModalAberto(null)} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg transition cursor-pointer">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4 mb-6">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-2 uppercase tracking-wide">Selecione a Data do Resumo</label>
+                      <input 
+                        type="date"
+                        value={dataSelecionadaResumo}
+                        onChange={e => setDataSelecionadaResumo(e.target.value)}
+                        className="w-full px-4 py-3 border border-slate-300 rounded-xl bg-slate-50 font-bold text-slate-800 text-sm focus:outline-none focus:border-sky-500 shadow-2xs"
+                      />
+                    </div>
+
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between shadow-2xs">
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-slate-400 block">Arquivo Localizado</span>
+                        <span className="text-xs font-bold text-slate-800 font-mono">
+                          {formatarDataParaPadrao(dataSelecionadaResumo)}.pdf
+                        </span>
+                      </div>
+
+                      {verificandoArquivo ? (
+                        <div className="flex items-center gap-2 text-xs font-bold text-sky-600">
+                          <Loader2 className="w-4 h-4 animate-spin" /> Verificando...
+                        </div>
+                      ) : arquivoEncontrado ? (
+                        <button
+                          onClick={baixarResumoPorData}
+                          className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-emerald-600/20 cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" /> Baixar PDF
+                        </button>
+                      ) : (
+                        <span className="text-xs font-bold text-rose-500 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200">
+                          Não encontrado
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button onClick={() => setModalAberto(null)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase transition cursor-pointer shadow-md">Fechar</button>
                 </motion.div>
               )}
 
@@ -1287,12 +1460,25 @@ export default function App() {
                   animate={{ scale: 1, opacity: 1, y: 0 }}
                   exit={{ scale: 0.95, opacity: 0, y: 10 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
-                  className="bg-white border border-slate-200 p-8 rounded-3xl w-[420px] text-center shadow-2xl"
+                  className="bg-white border border-slate-200 p-8 rounded-3xl w-[440px] text-center shadow-2xl border-t-8 border-emerald-500"
                 >
-                  <CheckCircle2 className="w-16 h-16 text-emerald-600 mx-auto mb-4" />
-                  <h3 className="text-xl font-black text-slate-800 mb-2">CAIXA FECHADO COM SUCESSO!</h3>
-                  <p className="text-xs font-medium text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200 mb-6 whitespace-pre-line text-left">{mensagemSucesso}</p>
-                  <button onClick={() => setModalAberto(null)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase tracking-wider cursor-pointer shadow-md">OK</button>
+                  <CheckCircle2 className="w-16 h-16 text-emerald-600 mx-auto mb-3" />
+                  <h3 className="text-xl font-black text-slate-900 mb-2">CAIXA FECHADO COM SUCESSO!</h3>
+                  <p className="text-xs font-medium text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-5 whitespace-pre-line text-left leading-relaxed">{mensagemSucesso}</p>
+                  
+                  {linkResumoRecente && (
+                    <div className="mb-6">
+                      <a
+                        href={linkResumoRecente.url}
+                        download={linkResumoRecente.nome}
+                        className="flex items-center justify-center gap-2 py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs uppercase rounded-xl shadow-md shadow-blue-600/30 transition-all"
+                      >
+                        <Download className="w-4 h-4" /> Baixar Resumo Gerado ({linkResumoRecente.nome})
+                      </a>
+                    </div>
+                  )}
+
+                  <button onClick={() => setModalAberto(null)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase tracking-wider cursor-pointer shadow-md">OK, Concluído</button>
                 </motion.div>
               )}
 
@@ -1315,8 +1501,8 @@ export default function App() {
                     <div className="flex items-center justify-center gap-2 py-3 bg-violet-50 text-violet-700 rounded-xl font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Processando...</div>
                   ) : (
                     <div className="flex gap-3">
-                      <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer">Voltar</button>
-                      <button onClick={() => handleTrocaCaixa(statusCaixa.caixa2Ativo ? 'finalizar' : 'iniciar')} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer">Confirmar</button>
+                      <button onClick={() => setModalAberto(null)} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer transition">Voltar</button>
+                      <button onClick={() => handleTrocaCaixa(statusCaixa.caixa2Ativo ? 'finalizar' : 'iniciar')} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer transition">Confirmar</button>
                     </div>
                   )}
                 </motion.div>
@@ -1357,11 +1543,11 @@ export default function App() {
                       value={obsRetiradaInput}
                       onChange={e => setObsRetiradaInput(e.target.value)}
                       placeholder="Ex: Retirada para pagamento de fornecedor..."
-                      className="w-full p-3.5 border border-slate-300 rounded-xl bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:border-amber-500 mb-6"
+                      className="w-full p-3.5 border border-slate-300 rounded-xl bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:border-amber-500 mb-6 shadow-2xs"
                     />
                     <div className="flex gap-3">
-                      <button type="button" onClick={() => { setModalAberto(null); setSetorAtivo(null); }} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer">Cancelar</button>
-                      <button type="submit" className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer">Confirmar</button>
+                      <button type="button" onClick={() => { setModalAberto(null); setSetorAtivo(null); }} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-extrabold text-xs uppercase cursor-pointer transition">Cancelar</button>
+                      <button type="submit" className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-extrabold text-xs uppercase shadow-md cursor-pointer transition">Confirmar</button>
                     </div>
                   </form>
                 </motion.div>
@@ -1469,7 +1655,7 @@ export default function App() {
                     )}
                   </div>
 
-                  <button onClick={() => setModalAberto(null)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase transition cursor-pointer">Fechar Fluxo de Caixa</button>
+                  <button onClick={() => setModalAberto(null)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-extrabold text-xs uppercase transition cursor-pointer shadow-md">Fechar Fluxo de Caixa</button>
                 </motion.div>
               )}
 
