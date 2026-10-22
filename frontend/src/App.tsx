@@ -65,6 +65,7 @@ const formatarDataParaPadrao = (dataIso: string) => {
 
 const formatarCpfCnpj = (valor: string) => {
   const apenasDigitos = valor.replace(/\D/g, '');
+  if (!apenasDigitos) return '';
   if (apenasDigitos.length <= 11) {
     return apenasDigitos
       .replace(/(\d{3})(\d)/, '$1.$2')
@@ -115,14 +116,14 @@ export default function App() {
   const [nomeClienteOrcamento, setNomeClienteOrcamento] = useState('');
   const [docClienteOrcamento, setDocClienteOrcamento] = useState('');
   const [descontoPercentual, setDescontoPercentual] = useState<string>('');
-  const [itensOrcamento, setItensOrcamento] = useState<Array<{ descricao: string; qtd: number; valorUnit: number }>>([
-    { descricao: '', qtd: 1, valorUnit: 0 }
+  const [itensOrcamento, setItensOrcamento] = useState<Array<{ descricao: string; qtd: string; valorUnit: string }>>([
+    { descricao: '', qtd: '', valorUnit: '' }
   ]);
 
   const ultimoItemRef = useRef<HTMLInputElement>(null);
 
   const adicionarItemOrcamento = () => {
-    setItensOrcamento(prev => [...prev, { descricao: '', qtd: 1, valorUnit: 0 }]);
+    setItensOrcamento(prev => [...prev, { descricao: '', qtd: '', valorUnit: '' }]);
     setTimeout(() => {
       if (ultimoItemRef.current) {
         ultimoItemRef.current.focus();
@@ -335,29 +336,24 @@ export default function App() {
   };
 
   const gerarPdfOrcamento = () => {
-    if (!nomeClienteOrcamento.trim()) {
-      alert('Informe o nome do cliente para o orçamento.');
-      return;
-    }
-
     const infoLoja = DADOS_UNIDADES[unidade] || DADOS_UNIDADES["MOGI"];
     const doc = new jsPDF();
 
     try {
-      doc.addImage('/logo-orc.png', 'PNG', 14, 12, 22, 22);
+      doc.addImage('/logo-orc.png', 'PNG', 14, 11, 24, 24);
     } catch (e) {
       console.warn("Logotipo não carregado no PDF, prosseguindo sem imagem.", e);
     }
 
     doc.setFont("Helvetica", "bold");
-    doc.setFontSize(13);
+    doc.setFontSize(13.5);
     doc.setTextColor(15, 23, 42); 
-    doc.text(infoLoja.razao, 40, 19);
+    doc.text(infoLoja.razao, 42, 18);
 
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(9.5);
     doc.setTextColor(70, 70, 70);
-    doc.text(`CNPJ: ${infoLoja.cnpj}  |  Site: ${infoLoja.site}`, 40, 26);
+    doc.text(`CNPJ: ${infoLoja.cnpj}  |  Site: ${infoLoja.site}`, 42, 25);
 
     doc.setDrawColor(220, 224, 230);
     doc.line(14, 39, 196, 39);
@@ -369,26 +365,40 @@ export default function App() {
 
     doc.setFont("Helvetica", "normal");
     doc.setFontSize(10);
-    doc.text(`Cliente: ${nomeClienteOrcamento.trim().toUpperCase()}`, 14, 54);
+    const clienteTexto = nomeClienteOrcamento.trim() ? nomeClienteOrcamento.trim().toUpperCase() : "__________________________________________________";
+    doc.text(`Cliente: ${clienteTexto}`, 14, 54);
+
     if (docClienteOrcamento.trim()) {
       doc.text(`CPF/CNPJ: ${formatarCpfCnpj(docClienteOrcamento)}`, 14, 60);
+    } else {
+      doc.text(`CPF/CNPJ: ________________________`, 14, 60);
     }
-    doc.text(`Data de Emissão: ${new Date().toLocaleDateString()}`, 14, docClienteOrcamento.trim() ? 66 : 60);
+    doc.text(`Data de Emissão: ${new Date().toLocaleDateString()}`, 14, 66);
 
-    const corpoTabela = itensOrcamento.map(i => [
-      i.descricao || 'Item sem descrição',
-      i.qtd,
-      formatarMoedaPtBr(i.valorUnit),
-      formatarMoedaPtBr(i.qtd * i.valorUnit)
-    ]);
+    const corpoTabela = itensOrcamento.map(i => {
+      const q = parseFloat(i.qtd) || 0;
+      const v = parseFloat(i.valorUnit) || 0;
+      const totalItem = q > 0 && v > 0 ? q * v : 0;
+      return [
+        i.descricao || '',
+        i.qtd !== '' ? i.qtd : '',
+        i.valorUnit !== '' ? formatarMoedaPtBr(v) : '',
+        totalItem > 0 ? formatarMoedaPtBr(totalItem) : ''
+      ];
+    });
 
-    const subtotalOrcamento = itensOrcamento.reduce((acc, i) => acc + (i.qtd * i.valorUnit), 0);
+    const subtotalOrcamento = itensOrcamento.reduce((acc, i) => {
+      const q = parseFloat(i.qtd) || 0;
+      const v = parseFloat(i.valorUnit) || 0;
+      return acc + (q * v);
+    }, 0);
+
     const percDesconto = parseFloat(descontoPercentual.replace(',', '.')) || 0;
     const valorDesconto = (subtotalOrcamento * percDesconto) / 100;
     const valorTotalOrcamento = Math.max(0, subtotalOrcamento - valorDesconto);
 
     autoTable(doc, {
-      startY: docClienteOrcamento.trim() ? 72 : 66,
+      startY: 72,
       head: [['DESCRIÇÃO DOS ITENS / SERVIÇOS', 'QTD', 'VALOR UNIT.', 'TOTAL']],
       body: corpoTabela,
       theme: 'grid',
@@ -408,17 +418,19 @@ export default function App() {
     doc.setFontSize(10);
     doc.setTextColor(70, 70, 70);
 
-    if (percDesconto > 0) {
+    if (percDesconto > 0 && subtotalOrcamento > 0) {
       doc.text(`Subtotal: ${formatarMoedaPtBr(subtotalOrcamento)}`, 196, finalY, { align: 'right' });
       finalY += 6;
       doc.text(`Desconto Aplicado (${percDesconto}%): - ${formatarMoedaPtBr(valorDesconto)}`, 196, finalY, { align: 'right' });
       finalY += 8;
     }
 
-    doc.setFont("Helvetica", "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`VALOR TOTAL: ${formatarMoedaPtBr(valorTotalOrcamento)}`, 196, finalY, { align: 'right' });
+    if (subtotalOrcamento > 0) {
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`VALOR TOTAL: ${formatarMoedaPtBr(valorTotalOrcamento)}`, 196, finalY, { align: 'right' });
+    }
 
     doc.setFont("Helvetica", "italic");
     doc.setFontSize(9);
@@ -434,7 +446,11 @@ export default function App() {
     doc.setTextColor(90, 90, 90);
     doc.text(`${infoLoja.endereco}  |  CEP: ${infoLoja.cep}  |  WhatsApp: ${infoLoja.whatsapp}  |  E-mail: ${infoLoja.email}`, 105, posYRodape, { align: 'center' });
 
-    doc.save(`Orcamento_${nomeClienteOrcamento.trim().replace(/\s+/g, '_').toUpperCase()}.pdf`);
+    const nomeArquivoPdf = nomeClienteOrcamento.trim() 
+      ? `Orcamento_${nomeClienteOrcamento.trim().replace(/\s+/g, '_').toUpperCase()}.pdf` 
+      : `Orcamento_Em_Branco.pdf`;
+
+    doc.save(nomeArquivoPdf);
     setModalAberto(null);
     dispararToast('Orçamento gerado com sucesso!', 'sucesso');
   };
@@ -1149,8 +1165,6 @@ export default function App() {
   }
 
   const caixaAberto = statusCaixa.status === 'Aberto';
-  
-  // Lógica ajustada para contar IDs únicos (clientes) de vendas válidas para o badge
   const totalVendasBadge = statusCaixa.vendas 
     ? new Set(statusCaixa.vendas.filter((v: any) => v.pagamento !== 'CANCELADO').map((v: any) => v.id)).size 
     : 0;
@@ -1203,11 +1217,9 @@ export default function App() {
           )}
         </div>
 
-        
-
         <div className="flex-1 py-3 px-3 space-y-1.5 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           
-                    <div className="relative group/tip">
+          <div className="relative group/tip">
             {!caixaAberto ? (
               <button 
                 onClick={() => setModalAberto('abrir')} 
@@ -1250,9 +1262,6 @@ export default function App() {
               }} 
               className="w-full flex items-center justify-between px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
             >
-              
-              
-              
               <div className="flex items-center gap-3.5 truncate">
                 <List className="w-5 h-5 text-sky-600 shrink-0 group-hover/btn:scale-140 transition-transform" />
                 {sidebarExpandida && <span className="truncate">Listar Vendas</span>}
@@ -1269,8 +1278,6 @@ export default function App() {
               </div>
             )}
           </div>
-
-          
 
           <div className="relative group/tip">
             <button 
@@ -1317,7 +1324,7 @@ export default function App() {
                 setNomeClienteOrcamento('');
                 setDocClienteOrcamento('');
                 setDescontoPercentual('');
-                setItensOrcamento([{ descricao: '', qtd: 1, valorUnit: 0 }]);
+                setItensOrcamento([{ descricao: '', qtd: '', valorUnit: '' }]);
                 setModalAberto('orcamento');
               }} 
               className="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl hover:bg-sky-50 text-slate-600 hover:text-sky-700 font-bold text-xs transition-all cursor-pointer group/btn"
@@ -1365,8 +1372,6 @@ export default function App() {
           </div>
 
           <div className="my-2 border-t border-slate-200" />
-
-
         </div>
 
         {/* BOTÃO RECOLHER/EXPANDIR COM DESTAQUE REFINADO */}
@@ -1804,8 +1809,9 @@ export default function App() {
                               type="number"
                               min={1}
                               value={item.qtd}
+                              onFocus={(e) => e.target.select()}
                               onChange={e => {
-                                const val = parseInt(e.target.value) || 1;
+                                const val = e.target.value;
                                 setItensOrcamento(prev => prev.map((it, i) => i === index ? { ...it, qtd: val } : it));
                               }}
                               onKeyDown={e => {
@@ -1814,8 +1820,8 @@ export default function App() {
                                   adicionarItemOrcamento();
                                 }
                               }}
-                              placeholder="Qtd"
-                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-center text-slate-800 focus:outline-none"
+                              placeholder="Qtd."
+                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-center text-slate-800 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                           <div className="col-span-3">
@@ -1823,8 +1829,9 @@ export default function App() {
                               type="number"
                               step="0.01"
                               value={item.valorUnit}
+                              onFocus={(e) => e.target.select()}
                               onChange={e => {
-                                const val = parseFloat(e.target.value) || 0;
+                                const val = e.target.value;
                                 setItensOrcamento(prev => prev.map((it, i) => i === index ? { ...it, valorUnit: val } : it));
                               }}
                               onKeyDown={e => {
@@ -1833,8 +1840,8 @@ export default function App() {
                                   adicionarItemOrcamento();
                                 }
                               }}
-                              placeholder="V. Unit (R$)"
-                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-slate-800 focus:outline-none"
+                              placeholder="Valor Unit."
+                              className="w-full px-3 py-2 border border-slate-300 bg-white rounded-lg text-xs font-semibold text-slate-800 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                           <div className="col-span-1 flex justify-center">
