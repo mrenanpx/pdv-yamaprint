@@ -697,7 +697,7 @@ export default function App() {
       docResumo.setTextColor(15, 23, 42);
       docResumo.setFont("Helvetica", "normal");
       docResumo.setFontSize(12);
-      docResumo.text(`DATA DA ABERTURA: ${dataCaixaIso.split('-').reverse().join('/')}   |   Clientes Atendidos: ${statusCaixa.totais.totalClientesUnicos}`, 14, 27);
+      docResumo.text(`DATA DO FECHAMENTO: ${dataCaixaIso.split('-').reverse().join('/')}   |   Clientes Atendidos: ${statusCaixa.totais.totalClientesUnicos}`, 14, 27);
 
       // Tabela 1: Setores
       docResumo.setFont("Helvetica", "bold");
@@ -1211,8 +1211,7 @@ export default function App() {
           </div>
           {sidebarExpandida && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="overflow-hidden truncate">
-              <span className="text-[9px] font-black tracking-widest text-sky-600 uppercase block">Yama Print</span>
-              <h2 className="text-xs font-black text-slate-900 tracking-wide truncate">LOJA {unidade}</h2>
+              <h2 className="text-xl font-black text-slate-900 tracking-wide truncate">LOJA {unidade}</h2>
             </motion.div>
           )}
         </div>
@@ -1415,7 +1414,7 @@ export default function App() {
             <div className="flex items-center gap-2.5">
               <span className="text-slate-400 font-bold">STATUS:</span>
               <div className="flex items-center gap-2">
-                <span className={`font-extrabold px-3 py-1 rounded-full shadow-2xs ${caixaAberto ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
+                <span className={` font-extrabold px-6 py-3 rounded-full shadow-2xs ${caixaAberto ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
                   {statusCaixa.status.toUpperCase()}
                 </span>
                 <span className="relative flex h-3 w-3">
@@ -1433,7 +1432,7 @@ export default function App() {
             
             <div className="flex items-center gap-2">
               <span className="text-slate-400 font-bold">OPERAÇÃO:</span>
-              <span className={`font-extrabold px-3.5 py-1 rounded-full border shadow-2xs ${statusCaixa.caixa2Ativo ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200' }`}>
+              <span className={`font-extrabold px-6 py-3 rounded-full border shadow-2xs ${statusCaixa.caixa2Ativo ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200' }`}>
                 {statusCaixa.caixa2Ativo ? 'ALMOÇO' : 'CAIXA PRINCIPAL'}
               </span>
             </div>
